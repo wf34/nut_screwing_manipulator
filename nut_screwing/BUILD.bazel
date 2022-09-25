@@ -1,0 +1,39 @@
+load("@drake//tools/skylark:py.bzl", "py_binary", "py_test")
+load("@drake//tools/skylark:pybind.bzl", "pybind_py_library")
+
+py_library(
+    name = "nut_screwing",
+    srcs = [
+        "__init__.py",
+        "sim_helper.py",
+        "differential_controller.py",
+        "open_loop_controller.py",
+    ],
+    visibility = [":__pkg__"],
+    deps = [
+        "@drake//bindings/pydrake",
+    ],
+)
+
+py_binary(
+    name = "run_manipulator",
+    srcs = ["run_manipulator.py"],
+    deps = [
+        ":nut_screwing",
+        "@drake//bindings/pydrake",
+    ],
+)
+
+py_test(
+    name = "nut_screwing_test",
+    srcs = [
+        "test/__init__.py",
+        "test/nut_screwing_test.py",
+    ],
+    main = "test/nut_screwing_test.py",
+    visibility = [":__pkg__"],
+    deps = [
+        ":nut_screwing",
+        ":run_manipulator",
+    ],
+)
