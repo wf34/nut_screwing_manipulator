@@ -149,9 +149,12 @@ def build_scene(meshcat, controller_type):
     meshcat.Delete()
     visualizer = MeshcatVisualizerCpp.AddToBuilder(
         builder, station.GetOutputPort("query_object"), meshcat)
-    
+
     diagram = builder.Build()
     diagram.set_name("pick_adapted_to_nut")
+    global_context = diagram.CreateDefaultContext()
+    sliders = sh.MeshcatJointSlidersThatPublish(meshcat, plant, visualizer, global_context)
+    sliders.Run()
 
     simulator = Simulator(diagram)
     #station.SetIiwaPosition(station.GetMyContextFromRoot(simulator.get_mutable_context()), q0)
