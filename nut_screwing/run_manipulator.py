@@ -5,8 +5,8 @@ import sys
 import numpy as np
 
 from pydrake.examples.manipulation_station import ManipulationStation
-from pydrake.math import RigidTransform, RotationMatrix
-
+from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
+from pydrake.common.eigen_geometry import AngleAxis
 from pydrake.all import (
     DiagramBuilder,
     MeshcatVisualizerCpp,
@@ -28,53 +28,40 @@ def make_gripper_frames(X_G, X_O):
 
     assert 'initial' in X_G
     assert 'initial' in X_O
-    assert 'goal' in X_O
+    #assert 'goal' in X_O
     # Define (again) the gripper pose relative to the object when in grasp.
     
     #p_GgraspO = [0., 0.07, 0.0] # I want to achieve this version
-    p_GgraspO = [0., 0.20, 0.07] # which of these to use depends on gravity
-    
-    R_GgraspO = RotationMatrix.Identity() # #RotationMatrix.Identity() #MakeZRotation(-np.pi/2.0)
+    p_GgraspO = [0.0, 0.1, 0.07] # which of these to use depends on gravity
+    R_GgraspO = RotationMatrix.MakeZRotation(np.pi/4.0)
     X_GgraspO = RigidTransform(R_GgraspO, p_GgraspO)
     
     X_OGgrasp = X_GgraspO.inverse()
 
-    # pregrasp is negative y in the gripper frame (see the figure!).
-    X_GgraspGpregrasp = RigidTransform([0, -0.15, 0.0])
+    X_GpregraspGgrasp = RigidTransform(RotationMatrix.Identity(), [0.1, 0., 0.])
+    X_GgraspGpregrasp = X_GpregraspGgrasp.inverse()
 
-    X_G["pick"] = X_O["initial"].multiply(X_OGgrasp)
-    X_G["prepick"] = X_G["pick"].multiply(X_GgraspGpregrasp)
 
-    X_G["place"] = X_O["goal"].multiply(X_OGgrasp)
-    X_G["postplace"] = X_G["place"].multiply(X_GgraspGpregrasp)
-    
+    p_GpickGmoved_through = [-0.1, 0.2, 0.0]
+    X_GpickGmoved_through = RigidTransform(RotationMatrix.Identity(), p_GpickGmoved_through)
 
-    # I'll interpolate a halfway orientation by converting to axis angle and halving the angle.
-    X_GpickGplace = X_G["pick"].inverse().multiply(X_G["place"])
-
+    X_G["pick_start"] = X_O["initial"].multiply(X_OGgrasp)
+    X_G["pregrasp"] = X_G["pick_start"].multiply(X_GgraspGpregrasp)
+    X_G["pick_end"] = X_G["pick_start"].multiply(X_GpickGmoved_through)
 
     # Now let's set the timing
     times = {"initial": 0}
-      
-    X_GinitialGprepick = X_G["initial"].inverse().multiply(X_G["prepick"])
-    times["prepick"] = times["initial"] + 10.0 #*np.linalg.norm(X_GinitialGprepick.translation())
-
-    # Allow some time for the gripper to close.
-    times["pick_start"] = times["prepick"] + 5
-    X_G["pick_start"] = X_G["pick"]
+    times["pregrasp"] = times["initial"] + 3.1
+    times["pick_start"] = times["pregrasp"] + 1.
+    times["pick_end"] = times["pick_start"] + 0.5
     
-    times["pick_end"] = times["pick_start"] + 2.0
-    X_G["pick_end"] = X_G["pick"]
+    for step in ['initial', 'pregrasp', 'pick_start', 'pick_end']:
+        three_to_str = lambda y : ' '.join(map(lambda x: '{:.3f}'.format(x), y))
+        rpy = RollPitchYaw(X_G[step].rotation()).vector()
+        tr = X_G[step].translation()
 
-    time_to_rotate = 2.+10.0*np.linalg.norm(X_GpickGplace.rotation().matrix()) 
-      
-    times["place_start"] = times["pick_end"] + time_to_rotate + 2.0
-    X_G["place_start"] = X_G["place"]
-      
-    times["place_end"] = times["place_start"] + 4.0
-    X_G["place_end"] = X_G["place"]
-
-    times["postplace"] = times["place_end"] + 4.0
+        print('Step {}. rpy: {}; tr: {} \n'.format(step, three_to_str(rpy), three_to_str(tr)))
+    #exit(1)
 
     return X_G, times
 
@@ -83,6 +70,9 @@ def build_scene(meshcat, controller_type):
     builder = DiagramBuilder()
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
+    #station.AddManipulandFromFile(
+    #            "drake/examples/manipulation_station/models/061_foam_brick.sdf",
+    #            RigidTransform(RotationMatrix(AngleAxis(np.pi/4, [0, 0, 1])), [0.3, -0.15, 0.05]))
     station.Finalize()
     
     body_frames_visualization = False
@@ -115,13 +105,11 @@ def build_scene(meshcat, controller_type):
         [0.0, -0.3, 0.1])}
     
     #X_O = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("nut"))}
+    #print(X_O)
     
     print('X_G[_initial]', X_G['initial'])
     print('X_O[_initial]', X_O['initial'])
     
-    X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
-    X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
-    #print(X_O, X_O['goal'], X_G)
     X_G, times = make_gripper_frames(X_G, X_O)
 
     if DIFF_IK == controller_type:
@@ -151,7 +139,7 @@ def build_scene(meshcat, controller_type):
         builder, station.GetOutputPort("query_object"), meshcat)
     
     diagram = builder.Build()
-    diagram.set_name("pick_adapted_to_nut")
+    diagram.set_name("nut_screwing")
 
     simulator = Simulator(diagram)
     #station.SetIiwaPosition(station.GetMyContextFromRoot(simulator.get_mutable_context()), q0)
@@ -166,7 +154,7 @@ def build_scene(meshcat, controller_type):
             simulator.get_mutable_context()).get_mutable_continuous_state_vector() \
             .SetFromVector(station.GetIiwaPosition(station_context))
     
-    simulator.set_target_realtime_rate(1.0)
+    simulator.set_target_realtime_rate(5.0)
     simulator.AdvanceTo(0.1)
     return simulator
 
@@ -179,6 +167,7 @@ def simulate_pick_adapted_to_nut(controller_type):
     _ = sys.stdin.readline()
 
     #meshcat.start_recording()
+    simulator.set_target_realtime_rate(5.0)
     simulator.AdvanceTo(30)
     #meshcat.stop_recording()
     #meshcat.publish_recording()

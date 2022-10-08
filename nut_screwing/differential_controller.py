@@ -18,9 +18,7 @@ def make_gripper_trajectory(X_G, times):
 
     sample_times = []
     poses = []
-    for name in ["initial",
-                 "prepick", "pick_start", "pick_end",
-                 "place_start", "place_end", "postplace"]:
+    for name in ["initial", "pregrasp", "pick_start", "pick_end"]:
         sample_times.append(times[name])
         poses.append(X_G[name])
     #MakeLinear
@@ -32,11 +30,9 @@ def make_wsg_command_trajectory(times):
     closed = np.array([0.0]);
 
     traj_wsg_command = PiecewisePolynomial.FirstOrderHold(
-        [times["initial"], times["pick_start"]], np.hstack([[opened], [opened]]))
+        [times["initial"], times["pregrasp"]], np.hstack([[opened], [closed]]))
+    traj_wsg_command.AppendFirstOrderSegment(times["pick_start"], closed)
     traj_wsg_command.AppendFirstOrderSegment(times["pick_end"], closed)
-    traj_wsg_command.AppendFirstOrderSegment(times["place_start"], closed)
-    traj_wsg_command.AppendFirstOrderSegment(times["place_end"], closed)
-    traj_wsg_command.AppendFirstOrderSegment(times["postplace"], opened)
     return traj_wsg_command
 
 # We can write a new System by deriving from the LeafSystem class.
