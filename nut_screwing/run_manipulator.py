@@ -5,13 +5,17 @@ import sys
 import numpy as np
 
 from pydrake.examples.manipulation_station import ManipulationStation
-from pydrake.math import RigidTransform, RotationMatrix
+from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
+from pydrake.common.eigen_geometry import AngleAxis
+from pydrake.geometry import Rgba
 
 from pydrake.all import (
     DiagramBuilder,
-    MeshcatVisualizerCpp,
-    Simulator
+    MeshcatVisualizer,
+    Simulator,
+    ContactVisualizer, ContactVisualizerParams
 )
+
 
 import nut_screwing.sim_helper as sh
 import nut_screwing.differential_controller as diff_c
@@ -78,11 +82,27 @@ def make_gripper_frames(X_G, X_O):
 
     return X_G, times
 
+def AddContactsSystem(meshcat, builder):
+    cv_params = ContactVisualizerParams()
+    cv_params.publish_period = 0.05
+    cv_params.default_color = Rgba(0.5, 0.5, 0.5)
+    cv_params.prefix = "py_visualizer"
+    cv_params.delete_on_initialization_event = False
+    cv_params.force_threshold = 0.2
+    cv_params.newtons_per_meter = 50
+    cv_params.radius = 0.001
+
+    cv_vis = ContactVisualizer(meshcat=meshcat, params=cv_params)
+    cv_system = builder.AddSystem(cv_vis)
+    cv_system.set_name('contact_visualizer')
+    return cv_system
+
 
 def build_scene(meshcat, controller_type):
     builder = DiagramBuilder()
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
+    cv_system = AddContactsSystem(meshcat, builder)
     station.Finalize()
     
     body_frames_visualization = False
@@ -143,11 +163,10 @@ def build_scene(meshcat, controller_type):
 
     builder.Connect(output_iiwa_position_port, station.GetInputPort("iiwa_position"))
     builder.Connect(output_wsg_position_port, station.GetInputPort("wsg_position"))
-    
-    ### AddContactsVisualization(meshcat, builder, station)
+    builder.Connect(station.GetOutputPort("contact_results"), cv_system.contact_results_input_port())
     
     meshcat.Delete()
-    visualizer = MeshcatVisualizerCpp.AddToBuilder(
+    visualizer = MeshcatVisualizer.AddToBuilder(
         builder, station.GetOutputPort("query_object"), meshcat)
     
     diagram = builder.Build()
