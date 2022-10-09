@@ -185,7 +185,7 @@ def build_scene(meshcat, controller_type):
             simulator.get_mutable_context()).get_mutable_continuous_state_vector() \
             .SetFromVector(station.GetIiwaPosition(station_context))
     
-    simulator.set_target_realtime_rate(1.0)
+    simulator.set_target_realtime_rate(5.0)
     simulator.AdvanceTo(0.1)
     return simulator
 
@@ -198,6 +198,7 @@ def simulate_pick_adapted_to_nut(controller_type):
     _ = sys.stdin.readline()
 
     #meshcat.start_recording()
+    simulator.set_target_realtime_rate(5.0)
     simulator.AdvanceTo(30)
     #meshcat.stop_recording()
     #meshcat.publish_recording()
