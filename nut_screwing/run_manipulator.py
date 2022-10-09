@@ -31,9 +31,9 @@ def make_gripper_frames(X_G, X_O):
     #assert 'goal' in X_O
     # Define (again) the gripper pose relative to the object when in grasp.
     
-    #p_GgraspO = [0., 0.07, 0.0] # I want to achieve this version
-    p_GgraspO = [0.0, 0.1, 0.07] # which of these to use depends on gravity
-    R_GgraspO = RotationMatrix.MakeZRotation(np.pi/4.0)
+    p_GgraspO = [0., 0.3, 0.10] # I want to achieve this version
+    #p_GgraspO = [0.0, 0.1, 0.07] # which of these to use depends on gravity
+    R_GgraspO = RotationMatrix.MakeZRotation(np.pi/6.0)
     X_GgraspO = RigidTransform(R_GgraspO, p_GgraspO)
     
     X_OGgrasp = X_GgraspO.inverse()
@@ -43,7 +43,7 @@ def make_gripper_frames(X_G, X_O):
 
 
     p_GpickGmoved_through = [-0.1, 0.2, 0.0]
-    X_GpickGmoved_through = RigidTransform(RotationMatrix.Identity(), p_GpickGmoved_through)
+    X_GpickGmoved_through = RigidTransform(RotationMatrix.MakeZRotation(np.radians(5.)), p_GpickGmoved_through)
 
     X_G["pick_start"] = X_O["initial"].multiply(X_OGgrasp)
     X_G["pregrasp"] = X_G["pick_start"].multiply(X_GgraspGpregrasp)
@@ -51,7 +51,7 @@ def make_gripper_frames(X_G, X_O):
 
     # Now let's set the timing
     times = {"initial": 0}
-    times["pregrasp"] = times["initial"] + 3.1
+    times["pregrasp"] = times["initial"] + 4.1
     times["pick_start"] = times["pregrasp"] + 1.
     times["pick_end"] = times["pick_start"] + 0.5
     
