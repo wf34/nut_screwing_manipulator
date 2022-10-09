@@ -51,12 +51,14 @@ def make_gripper_frames(X_G, X_O):
     X_G["pick_start"] = X_O["initial"].multiply(X_OGgrasp)
     X_G["pregrasp"] = X_G["pick_start"].multiply(X_GgraspGpregrasp)
     X_G["pick_end"] = X_G["pick_start"].multiply(X_GpickGmoved_through)
+    X_G["pull_out"] = X_G["pregrasp"]
 
     # Now let's set the timing
     times = {"initial": 0}
     times["pregrasp"] = times["initial"] + 4.1
     times["pick_start"] = times["pregrasp"] + 1.
     times["pick_end"] = times["pick_start"] + 0.5
+    times["pull_out"] = times["pick_end"] + 1.
     
     for step in ['initial', 'pregrasp', 'pick_start', 'pick_end']:
         three_to_str = lambda y : ' '.join(map(lambda x: '{:.3f}'.format(x), y))
