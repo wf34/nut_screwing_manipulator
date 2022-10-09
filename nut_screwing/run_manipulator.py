@@ -9,10 +9,13 @@ from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
 from pydrake.common.eigen_geometry import AngleAxis
 from pydrake.geometry import Rgba
 from pydrake.all import (
+    AbstractValue,
     DiagramBuilder,
     MeshcatVisualizer,
     Simulator,
-    ContactVisualizer, ContactVisualizerParams
+    ContactVisualizer, ContactVisualizerParams,
+    SpatialForce, ExternallyAppliedSpatialForce,
+    ConstantValueSource
 )
 
 
@@ -22,6 +25,21 @@ import nut_screwing.open_loop_controller as ol_c
 
 DIFF_IK = 'differential'
 OPEN_IK = 'open_loop'
+
+def AddExternallyAppliedSpatialForce(builder, station):
+    force_object = ExternallyAppliedSpatialForce()
+    force_object.body_index = station.get_multibody_plant().GetBodyByName("nut").index()
+    force_object.p_BoBq_B = np.array([0.02, 0.02, 0.])
+    #force_object.F_Bq_W = SpatialForce(tau=np.array([0., 0., -30.]), f=np.zeros(3))
+    force_object.F_Bq_W = SpatialForce(tau=np.zeros(3), f=np.array([210., 210., 0.]))
+
+    forces = []
+    forces.append(force_object)
+    value = AbstractValue.Make(forces)
+    force_system = builder.AddSystem(ConstantValueSource(value))
+    force_system.set_name('constant_debug_force')
+    return force_system
+
 
 def make_gripper_frames(X_G, X_O):
     """
@@ -91,9 +109,8 @@ def build_scene(meshcat, controller_type):
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
     cv_system = AddContactsSystem(meshcat, builder)
-    #station.AddManipulandFromFile(
-    #            "drake/examples/manipulation_station/models/061_foam_brick.sdf",
-    #            RigidTransform(RotationMatrix(AngleAxis(np.pi/4, [0, 0, 1])), [0.3, -0.15, 0.05]))
+    force_system = AddExternallyAppliedSpatialForce(builder, station)
+
     station.Finalize()
     
     body_frames_visualization = False
@@ -153,6 +170,7 @@ def build_scene(meshcat, controller_type):
     builder.Connect(output_iiwa_position_port, station.GetInputPort("iiwa_position"))
     builder.Connect(output_wsg_position_port, station.GetInputPort("wsg_position"))
     builder.Connect(station.GetOutputPort("contact_results"), cv_system.contact_results_input_port())
+    builder.Connect(force_system.get_output_port(0), station.GetInputPort('applied_spatial_force'))
     
     meshcat.Delete()
     visualizer = MeshcatVisualizer.AddToBuilder(
@@ -163,6 +181,13 @@ def build_scene(meshcat, controller_type):
 
     simulator = Simulator(diagram)
     #station.SetIiwaPosition(station.GetMyContextFromRoot(simulator.get_mutable_context()), q0)
+
+    screw = plant.GetJointByName("nut_to_bolt_link")
+    print(screw, screw.screw_pitch(), screw.damping(), screw.get_translation(temp_plant_context), screw.get_rotation(temp_plant_context))
+    nut = plant.GetBodyByName("nut")
+    print(type(nut), dir(nut))
+    print('nut weighs: ', nut.get_mass(temp_plant_context))
+    print('nut I: ', nut.default_rotational_inertia().get_moments(), nut.default_rotational_inertia().get_products())
     
     if integrator is not None:
         station_context = station.GetMyContextFromRoot(simulator.get_mutable_context())
