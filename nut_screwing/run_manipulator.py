@@ -110,7 +110,7 @@ def build_scene(meshcat, controller_type, log_destination):
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
     cv_system = AddContactsSystem(meshcat, builder)
-    force_system = AddExternallyAppliedSpatialForce(builder, station)
+    #force_system = AddExternallyAppliedSpatialForce(builder, station)
 
     station.Finalize()
     
@@ -171,7 +171,7 @@ def build_scene(meshcat, controller_type, log_destination):
     builder.Connect(output_iiwa_position_port, station.GetInputPort("iiwa_position"))
     builder.Connect(output_wsg_position_port, station.GetInputPort("wsg_position"))
     builder.Connect(station.GetOutputPort("contact_results"), cv_system.contact_results_input_port())
-    builder.Connect(force_system.get_output_port(0), station.GetInputPort('applied_spatial_force'))
+    #builder.Connect(force_system.get_output_port(0), station.GetInputPort('applied_spatial_force'))
     
     meshcat.Delete()
     visualizer = MeshcatVisualizer.AddToBuilder(
