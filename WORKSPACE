@@ -32,7 +32,7 @@
 
 workspace(name = "control_nut_screwing_manipulator")
 
-DRAKE_COMMIT = "6535a7aa97e0a1ad59037850c2b0edbf7e1335e7"
+DRAKE_COMMIT = "d2d229abfeae3073779ab304a0a947bccd14d182"
 DRAKE_CHECKSUM = "" 
 
 # Or choose a specific revision of Drake to use.
