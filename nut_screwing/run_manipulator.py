@@ -20,6 +20,7 @@ from pydrake.all import (
 import nut_screwing.sim_helper as sh
 import nut_screwing.differential_controller as diff_c
 import nut_screwing.open_loop_controller as ol_c
+import nut_screwing.state_monitor as sm
 
 DIFF_IK = 'differential'
 OPEN_IK = 'open_loop'
@@ -98,7 +99,7 @@ def AddContactsSystem(meshcat, builder):
     return cv_system
 
 
-def build_scene(meshcat, controller_type):
+def build_scene(meshcat, controller_type, log_destination):
     builder = DiagramBuilder()
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
@@ -173,6 +174,8 @@ def build_scene(meshcat, controller_type):
     diagram.set_name("pick_adapted_to_nut")
 
     simulator = Simulator(diagram)
+    state_monitor = sm.StateMonitor(log_destination, plant)
+    simulator.set_monitor(state_monitor.callback)
     #station.SetIiwaPosition(station.GetMyContextFromRoot(simulator.get_mutable_context()), q0)
     
     if integrator is not None:
@@ -190,10 +193,10 @@ def build_scene(meshcat, controller_type):
     return simulator
 
 
-def simulate_pick_adapted_to_nut(controller_type):
+def simulate_pick_adapted_to_nut(controller_type, log_destination):
     print('hello drake')
     meshcat = sh.StartMeshcat()
-    simulator = build_scene(meshcat, controller_type)
+    simulator = build_scene(meshcat, controller_type, log_destination)
     print('break line to view animation:')
     _ = sys.stdin.readline()
 
@@ -206,7 +209,8 @@ def simulate_pick_adapted_to_nut(controller_type):
 
 def parse_args():
     parser = argparse.ArgumentParser(description=sys.argv[0])
-    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, OPEN_IK], help='what controls manipular')
+    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, OPEN_IK], help='what controls manipulator')
+    parser.add_argument('-l', '--log_destination', default='', help='where to put telemetry')
     return vars(parser.parse_args())
 
 if '__main__' == __name__:
