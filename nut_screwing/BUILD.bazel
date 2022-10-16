@@ -26,6 +26,15 @@ py_binary(
 )
 
 py_binary(
+    name = "do_graphing",
+    srcs = ["do_graphing.py"],
+    deps = [
+        ":nut_screwing",
+        "@drake//bindings/pydrake",
+    ],
+)
+
+py_binary(
     name = "teleop_manipulator",
     srcs = ["teleop_manipulator.py"],
     deps = [
