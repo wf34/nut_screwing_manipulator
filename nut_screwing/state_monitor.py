@@ -11,9 +11,9 @@ def get_3_vector(name):
 TIME = 'time'
 TRANSLATION = get_3_vector('translation')
 QUATERNION = ['quaternion_w'] + get_3_vector('quaternion')
-VELOCITY = get_3_vector('velocity_l') + get_3_vector('velocity_a')
-ACCELERATION = get_3_vector('acceleration_l') + get_3_vector('acceleration_a')
-FORCE = get_3_vector('force') + get_3_vector('torque')
+VELOCITY = get_3_vector('velocity_a') + get_3_vector('velocity_l')
+ACCELERATION = get_3_vector('acceleration_a') + get_3_vector('acceleration_l')
+FORCE = get_3_vector('torque') + get_3_vector('force')
 HEADER = [TIME] + TRANSLATION + QUATERNION + VELOCITY + ACCELERATION + FORCE
 
 
