@@ -3,6 +3,9 @@ import csv
 
 from pydrake.systems.framework import EventStatus
 from pydrake.multibody.tree import MultibodyForces
+from pydrake.multibody.math import SpatialForce
+
+import numpy as np
 
 def get_3_vector(name):
     axes = ['x', 'y', 'z']
@@ -30,6 +33,7 @@ def augment_datum(datum, keys, values):
 class StateMonitor:
     def __init__(self, path, plant):
         self._plant = plant
+        
         if os.path.exists(path):
             assert not os.path.isdir(path)
             if os.path.isfile(path):
@@ -64,9 +68,18 @@ class StateMonitor:
     def callback(self, root_context):
         nut = self._plant.GetBodyByName("nut")
         nut_context = self._plant.GetMyContextFromRoot(root_context)
+
+        contact_results = (
+            self._plant.get_contact_results_output_port().Eval(nut_context))
+        multibody_forces = MultibodyForces(plant=self._plant)
+
+        assert 0 == contact_results.num_hydroelastic_contacts()
+        for i in range(contact_results.num_point_pair_contacts()):
+             nut.AddInForceInWorld(nut_context, SpatialForce(tau=np.zeros(3), f=contact_results.point_pair_contact_info(i).contact_force()), multibody_forces)
+
         self.add_data(root_context.get_time(),
                       nut.EvalPoseInWorld(nut_context),
                       nut.EvalSpatialVelocityInWorld(nut_context),
                       nut.EvalSpatialAccelerationInWorld(nut_context),
-                      nut.GetForceInWorld(nut_context, MultibodyForces(plant=self._plant)))
+                      nut.GetForceInWorld(nut_context, multibody_forces))
         return EventStatus.DidNothing()
