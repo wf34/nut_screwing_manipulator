@@ -78,7 +78,7 @@ def do_graphs(input_telemetry, output_graph):
     axes_02_twin = axes[0, 2].twinx()
     tz = axes_02_twin.plot(series[sm.TIME], series['translation_z'], label='translation\'', color='b', linewidth=2)
     v_lz = axes[0, 2].plot(series[sm.TIME], series['velocity_l_z'], label='velocity', color='orange', linewidth=2)
-    a_lz = axes[0, 2].plot(series[sm.TIME], series['acceleration_l_z'], label='acceleration\'', color='r', linewidth=1)
+    a_lz = axes[0, 2].plot(series[sm.TIME], series['acceleration_l_z'], label='acceleration', color='r', linewidth=1)
     f_z = axes_02_twin.plot(series[sm.TIME], series['force_z'], label='force\'', color='k', linewidth=1)
     lines_02 = tz + v_lz + a_lz + f_z
     axes[0, 2].legend(lines_02, [l.get_label() for l in lines_02])
