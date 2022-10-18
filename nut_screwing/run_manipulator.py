@@ -105,12 +105,14 @@ def AddContactsSystem(meshcat, builder):
     return cv_system
 
 
-def build_scene(meshcat, controller_type, log_destination):
+def build_scene(meshcat, controller_type, log_destination, with_external_force):
     builder = DiagramBuilder()
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
     cv_system = AddContactsSystem(meshcat, builder)
-    #force_system = AddExternallyAppliedSpatialForce(builder, station)
+
+    if with_external_force:
+        force_system = AddExternallyAppliedSpatialForce(builder, station)
 
     station.Finalize()
     
@@ -171,7 +173,8 @@ def build_scene(meshcat, controller_type, log_destination):
     builder.Connect(output_iiwa_position_port, station.GetInputPort("iiwa_position"))
     builder.Connect(output_wsg_position_port, station.GetInputPort("wsg_position"))
     builder.Connect(station.GetOutputPort("contact_results"), cv_system.contact_results_input_port())
-    #builder.Connect(force_system.get_output_port(0), station.GetInputPort('applied_spatial_force'))
+    if with_external_force:
+        builder.Connect(force_system.get_output_port(0), station.GetInputPort('applied_spatial_force'))
     
     meshcat.Delete()
     visualizer = MeshcatVisualizer.AddToBuilder(
@@ -207,10 +210,10 @@ def build_scene(meshcat, controller_type, log_destination):
     return simulator
 
 
-def simulate_pick_adapted_to_nut(controller_type, log_destination):
+def simulate_manipulator_scene(controller_type, log_destination, with_external_force):
     print('hello drake')
     meshcat = sh.StartMeshcat()
-    simulator = build_scene(meshcat, controller_type, log_destination)
+    simulator = build_scene(meshcat, controller_type, log_destination, with_external_force)
     print('break line to view animation:')
     _ = sys.stdin.readline()
 
@@ -225,7 +228,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description=sys.argv[0])
     parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, OPEN_IK], help='what controls manipulator')
     parser.add_argument('-l', '--log_destination', default='', help='where to put telemetry')
+    parser.add_argument('-e', '--with_external_force', action='store_true', help='set if synthetic manipulation is needed')
     return vars(parser.parse_args())
 
 if '__main__' == __name__:
-    simulate_pick_adapted_to_nut(**parse_args())
+    simulate_manipulator_scene(**parse_args())
