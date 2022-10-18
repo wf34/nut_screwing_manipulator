@@ -68,17 +68,27 @@ class StateMonitor:
     def callback(self, root_context):
         nut = self._plant.GetBodyByName("nut")
         nut_context = self._plant.GetMyContextFromRoot(root_context)
+        X_WB = nut.EvalPoseInWorld(nut_context)
 
-        contact_results = (
-            self._plant.get_contact_results_output_port().Eval(nut_context))
+        contact_results = self._plant.get_contact_results_output_port().Eval(nut_context)
+
         multibody_forces = MultibodyForces(plant=self._plant)
 
         assert 0 == contact_results.num_hydroelastic_contacts()
         for i in range(contact_results.num_point_pair_contacts()):
-             nut.AddInForceInWorld(nut_context, SpatialForce(tau=np.zeros(3), f=contact_results.point_pair_contact_info(i).contact_force()), multibody_forces)
+             contact_pair = contact_results.point_pair_contact_info(i)
+             sign = 1. if contact_pair.bodyB_index() == nut.index() else -1.
+             f_Bc_W = sign*contact_pair.contact_force()
+             F_Bc_W = SpatialForce(tau=np.zeros(3), f=f_Bc_W)
+             p_WBo = X_WB.translation()
+             p_WC = contact_pair.contact_point()
+             p_BoC_W = p_WBo - p_WC
+             F_Bo_W = F_Bc_W.Shift(p_BoC_W)
+             nut.AddInForceInWorld(nut_context, F_Bo_W, multibody_forces)
+
 
         self.add_data(root_context.get_time(),
-                      nut.EvalPoseInWorld(nut_context),
+                      X_WB,
                       nut.EvalSpatialVelocityInWorld(nut_context),
                       nut.EvalSpatialAccelerationInWorld(nut_context),
                       nut.GetForceInWorld(nut_context, multibody_forces))
