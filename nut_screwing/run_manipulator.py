@@ -32,7 +32,7 @@ def AddExternallyAppliedSpatialForce(builder, station):
     force_object.body_index = station.get_multibody_plant().GetBodyByName("nut").index()
     force_object.p_BoBq_B = np.array([0.02, 0.02, 0.])
     #force_object.F_Bq_W = SpatialForce(tau=np.array([0., 0., -3000.]), f=np.zeros(3))
-    force_object.F_Bq_W = SpatialForce(tau=np.zeros(3), f=np.array([1.e+6, 100., 0.]))
+    force_object.F_Bq_W = SpatialForce(tau=np.zeros(3), f=np.array([200., 1., 0.]))
 
     forces = []
     forces.append(force_object)
