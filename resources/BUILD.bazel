@@ -1,0 +1,5 @@
+filegroup(
+    name = "bolt_and_nut_model",
+    srcs = [":bolt_and_nut.sdf"],
+    visibility = ["//visibility:public"],
+)

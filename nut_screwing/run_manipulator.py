@@ -4,6 +4,8 @@ import sys
 
 import numpy as np
 
+from bazel_tools.tools.python.runfiles import runfiles
+
 from pydrake.examples.manipulation_station import ManipulationStation
 from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
 from pydrake.common.eigen_geometry import AngleAxis
@@ -16,7 +18,6 @@ from pydrake.all import (
     ContactVisualizer, ContactVisualizerParams
 )
 
-
 import nut_screwing.sim_helper as sh
 import nut_screwing.differential_controller as diff_c
 import nut_screwing.open_loop_controller as ol_c
@@ -24,6 +25,11 @@ import nut_screwing.state_monitor as sm
 
 DIFF_IK = 'differential'
 OPEN_IK = 'open_loop'
+
+def get_manipuland_resource_path():
+    manifest = runfiles.Create()
+    return manifest.Rlocation("control_nut_screwing_manipulator/resources/bolt_and_nut.sdf")
+
 
 def make_gripper_frames(X_G, X_O):
     """
@@ -103,6 +109,8 @@ def build_scene(meshcat, controller_type, log_destination):
     builder = DiagramBuilder()
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
+
+    manipuland_path = get_manipuland_resource_path()
     cv_system = AddContactsSystem(meshcat, builder)
     station.Finalize()
     

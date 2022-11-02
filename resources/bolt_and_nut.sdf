@@ -1,0 +1,128 @@
+<?xml version='1.0'?>
+<sdf version='1.7'>
+  <model name='nut_and_bolt'>
+    <link name='bolt'>
+      <pose>0.0 0.0 0.0 0.0 0.0 0.0</pose>
+      <visual name='bolt_vis'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>./bolt.obj</uri>
+            <scale>0.07 0.07 0.07</scale>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+    <link name='nut'>
+      <pose>0.0 0.0 0.0 0.0 0.0 0.0</pose>
+      <visual name='nut_vis'>
+        <!-- <pose>0 0 0.05 0 0 0</pose> -->
+        <pose>0.0 0.0 0.0 0.0 0.0 0.0</pose>
+        <geometry>
+          <!-- <mesh>
+            <uri>./nut.obj</uri>
+            <scale>0.07 0.07 0.07</scale>
+          </mesh> -->
+          <box> 
+            <size>0.039 0.039 0.019</size>
+          </box>
+        </geometry>
+      </visual>
+      <collision name='box_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box> 
+            <size>0.039 0.039 0.019</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="point_collision1">
+        <pose>0.02 0.02 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="point_collision2">
+        <pose>0.02 -0.02 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="point_collision3">
+        <pose>-0.02 0.02 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="point_collision4">
+        <pose>-0.02 -0.02 0.02 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="point_collision5">
+        <pose>0.02 0.02 0.00 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="point_collision6">
+        <pose>0.02 -0.02 0.00 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="point_collision7">
+        <pose>-0.02 0.02 0.00 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="point_collision8">
+        <pose>-0.02 -0.02 0.00 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>1e-7</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.02</mass>
+        <inertia>
+          <ixx>1.1e-6</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>1.1e-6</iyy>
+          <iyz>0</iyz>
+          <izz>1.1e-6</izz>
+        </inertia>
+      </inertial>
+    </link>
+    <joint name='nut_to_bolt_link' type='screw'>
+      <parent>bolt</parent>
+      <child>nut</child>
+      <pose>0 0 0.03 0 0 0</pose>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <dynamics>
+          <damping>0.0</damping>
+        </dynamics>
+      </axis>
+    </joint>
+  </model>
+</sdf>
