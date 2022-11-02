@@ -22,6 +22,10 @@ py_binary(
     deps = [
         ":nut_screwing",
         "@drake//bindings/pydrake",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+    data = [
+        "//resources:bolt_and_nut_model",
     ],
 )
 
