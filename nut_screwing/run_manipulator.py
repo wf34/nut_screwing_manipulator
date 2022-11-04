@@ -17,6 +17,7 @@ from pydrake.all import (
     Simulator,
     ContactVisualizer, ContactVisualizerParams
 )
+from pydrake.multibody.parsing import Parser
 
 import nut_screwing.sim_helper as sh
 import nut_screwing.differential_controller as diff_c
@@ -28,7 +29,17 @@ OPEN_IK = 'open_loop'
 
 def get_manipuland_resource_path():
     manifest = runfiles.Create()
-    return manifest.Rlocation("control_nut_screwing_manipulator/resources/bolt_and_nut.sdf")
+    return manifest.Rlocation('control_nut_screwing_manipulator/resources/bolt_and_nut.sdf')
+
+
+def add_manipuland(plant):
+    manipuland_path = get_manipuland_resource_path()
+    bolt_with_nut = Parser(plant=plant).AddModelFromFile(manipuland_path)
+    X_WC = RigidTransform(RotationMatrix.Identity(), [0.0, -0.3, 0.1])
+    plant.WeldFrames(
+            plant.world_frame(),
+            plant.GetFrameByName('bolt', bolt_with_nut),
+            X_WC)
 
 
 def make_gripper_frames(X_G, X_O):
@@ -109,8 +120,9 @@ def build_scene(meshcat, controller_type, log_destination):
     builder = DiagramBuilder()
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
+    plant = station.get_multibody_plant()
+    add_manipuland(plant)
 
-    manipuland_path = get_manipuland_resource_path()
     cv_system = AddContactsSystem(meshcat, builder)
     station.Finalize()
     
@@ -118,7 +130,6 @@ def build_scene(meshcat, controller_type, log_destination):
     
     # Find the initial pose of the gripper (as set in the default Context)
     temp_context = station.CreateDefaultContext()
-    plant = station.get_multibody_plant()
     
     plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
     
