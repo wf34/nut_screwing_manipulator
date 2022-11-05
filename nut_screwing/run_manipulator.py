@@ -9,6 +9,7 @@ from bazel_tools.tools.python.runfiles import runfiles
 from pydrake.examples.manipulation_station import ManipulationStation
 from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
 from pydrake.common.eigen_geometry import AngleAxis
+from pydrake.multibody.tree import RevoluteJoint_
 from pydrake.geometry import Rgba
 from pydrake.all import (
     AbstractValue,
@@ -42,6 +43,17 @@ def add_manipuland(plant):
             plant.world_frame(),
             plant.GetFrameByName('bolt', bolt_with_nut),
             X_WC)
+
+
+def set_iiwa_default_position(plant):
+    iiwa_model_instance = plant.GetModelInstanceByName('iiwa')
+    indices = plant.GetJointIndices(model_instance=iiwa_model_instance)
+    q0_iiwa = [-1.57, 0.1, 0, -1.2, 0, 1.6]
+    for i, q in zip(indices, q0_iiwa):
+        ith_rev_joint = plant.get_mutable_joint(joint_index=i)
+        if isinstance(ith_rev_joint, RevoluteJoint_[float]):
+            ith_rev_joint.set_default_angle(q)
+        print(type(ith_rev_joint), q, i)
 
 
 def AddExternallyAppliedSpatialForce(builder, station):
@@ -135,12 +147,12 @@ def build_scene(meshcat, controller_type, log_destination, with_external_force):
         force_system = AddExternallyAppliedSpatialForce(builder, station)
 
     station.Finalize()
-    
+    set_iiwa_default_position(plant)
+
     body_frames_visualization = False
     
     # Find the initial pose of the gripper (as set in the default Context)
     temp_context = station.CreateDefaultContext()
-    
     plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
     
     scene_graph = station.get_scene_graph()
