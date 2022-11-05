@@ -9,6 +9,7 @@ from bazel_tools.tools.python.runfiles import runfiles
 from pydrake.examples.manipulation_station import ManipulationStation
 from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
 from pydrake.common.eigen_geometry import AngleAxis
+from pydrake.multibody.tree import RevoluteJoint_
 from pydrake.geometry import Rgba
 
 from pydrake.all import (
@@ -40,6 +41,32 @@ def add_manipuland(plant):
             plant.world_frame(),
             plant.GetFrameByName('bolt', bolt_with_nut),
             X_WC)
+
+
+def set_iiwa_default_position(plant):
+    iiwa_model_instance = plant.GetModelInstanceByName('iiwa')
+    indices = plant.GetJointIndices(model_instance=iiwa_model_instance)
+    q0_iiwa = [-1.57, 0.1, 0, -1.2, 0, 1.6]
+    for i, q in zip(indices, q0_iiwa):
+        ith_rev_joint = plant.get_mutable_joint(joint_index=i)
+        if isinstance(ith_rev_joint, RevoluteJoint_[float]):
+            ith_rev_joint.set_default_angle(q)
+        print(type(ith_rev_joint), q, i)
+
+
+def AddExternallyAppliedSpatialForce(builder, station):
+    force_object = ExternallyAppliedSpatialForce()
+    force_object.body_index = station.get_multibody_plant().GetBodyByName("nut").index()
+    force_object.p_BoBq_B = np.array([0.02, 0.02, 0.])
+    #force_object.F_Bq_W = SpatialForce(tau=np.array([0., 0., -3000.]), f=np.zeros(3))
+    force_object.F_Bq_W = SpatialForce(tau=np.zeros(3), f=np.array([200., 1., 0.]))
+
+    forces = []
+    forces.append(force_object)
+    value = AbstractValue.Make(forces)
+    force_system = builder.AddSystem(ConstantValueSource(value))
+    force_system.set_name('constant_debug_force')
+    return force_system
 
 
 def make_gripper_frames(X_G, X_O):
@@ -125,12 +152,12 @@ def build_scene(meshcat, controller_type, log_destination):
 
     cv_system = AddContactsSystem(meshcat, builder)
     station.Finalize()
-    
+    set_iiwa_default_position(plant)
+
     body_frames_visualization = False
     
     # Find the initial pose of the gripper (as set in the default Context)
     temp_context = station.CreateDefaultContext()
-    
     plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
     
     scene_graph = station.get_scene_graph()
