@@ -41,6 +41,7 @@ def add_manipuland(plant):
             plant.world_frame(),
             plant.GetFrameByName('bolt', bolt_with_nut),
             X_WC)
+    return bolt_with_nut
 
 
 def set_iiwa_default_position(plant):
@@ -148,14 +149,15 @@ def build_scene(meshcat, controller_type, log_destination):
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
     plant = station.get_multibody_plant()
-    add_manipuland(plant)
-
+    #bolt_with_nut_model = add_manipuland(plant)
     cv_system = AddContactsSystem(meshcat, builder)
     station.Finalize()
     set_iiwa_default_position(plant)
 
+    #dummy_system = builder.AddSystem(ConstantValueSource(AbstractValue.Make([0.])))
+    #builder.Connect(dummy_system.get_output_port(), plant.get_actuation_input_port(bolt_with_nut_model))
     body_frames_visualization = False
-    
+
     # Find the initial pose of the gripper (as set in the default Context)
     temp_context = station.CreateDefaultContext()
     plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
@@ -223,7 +225,7 @@ def build_scene(meshcat, controller_type, log_destination):
     state_monitor = sm.StateMonitor(log_destination, plant)
     simulator.set_monitor(state_monitor.callback)
     #station.SetIiwaPosition(station.GetMyContextFromRoot(simulator.get_mutable_context()), q0)
-    
+
     if integrator is not None:
         station_context = station.GetMyContextFromRoot(simulator.get_mutable_context())
         # TODO(russt): Add this missing python binding
