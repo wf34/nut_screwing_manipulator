@@ -32,7 +32,7 @@
 
 workspace(name = "control_nut_screwing_manipulator")
 
-DRAKE_COMMIT = "6535a7aa97e0a1ad59037850c2b0edbf7e1335e7"
+DRAKE_COMMIT = "5e5bc4d473247c278ef44d35483b1167c8c10993" # hacked branch experiment/wf34/hybrid_control_for_nut_screwing2-rebased
 DRAKE_CHECKSUM = "" 
 
 # Or choose a specific revision of Drake to use.
