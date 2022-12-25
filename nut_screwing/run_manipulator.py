@@ -149,19 +149,14 @@ def build_scene(meshcat, controller_type, log_destination):
     station = builder.AddSystem(ManipulationStation())
     station.SetupNutStation()
     plant = station.get_multibody_plant()
-    #bolt_with_nut_model = add_manipuland(plant)
     cv_system = AddContactsSystem(meshcat, builder)
     station.Finalize()
     set_iiwa_default_position(plant)
-
-    #dummy_system = builder.AddSystem(ConstantValueSource(AbstractValue.Make([0.])))
-    #builder.Connect(dummy_system.get_output_port(), plant.get_actuation_input_port(bolt_with_nut_model))
     body_frames_visualization = False
 
     # Find the initial pose of the gripper (as set in the default Context)
     temp_context = station.CreateDefaultContext()
     plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
-    
     scene_graph = station.get_scene_graph()
     
     if body_frames_visualization:
@@ -217,7 +212,6 @@ def build_scene(meshcat, controller_type, log_destination):
     meshcat.Delete()
     visualizer = MeshcatVisualizer.AddToBuilder(
         builder, station.GetOutputPort("query_object"), meshcat)
-    
     diagram = builder.Build()
     diagram.set_name("pick_adapted_to_nut")
 
