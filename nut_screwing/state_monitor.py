@@ -86,7 +86,6 @@ class StateMonitor:
              F_Bo_W = F_Bc_W.Shift(p_BoC_W)
              nut.AddInForceInWorld(nut_context, F_Bo_W, multibody_forces)
 
-
         self.add_data(root_context.get_time(),
                       X_WB,
                       nut.EvalSpatialVelocityInWorld(nut_context),
