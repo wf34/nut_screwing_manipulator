@@ -76,6 +76,7 @@ class PseudoInverseController(LeafSystem):
         v = np.linalg.pinv(J_G).dot(V_G)
         output.SetFromVector(v)
 
+
 def create_differential_controller(builder, plant, input_iiwa_position_port, X_G, times):
     # input_iiwa_position_port: measured iiwa position 
     # X_G: a dict with Gripper poses; keys - str labels of action
@@ -86,13 +87,24 @@ def create_differential_controller(builder, plant, input_iiwa_position_port, X_G
     traj_wsg_command = make_wsg_command_trajectory(times)
     print('traj, number of segments', traj.get_number_of_segments())
     traj_V_G = traj.MakeDerivative()
-    traj_p_G = traj.get_position_trajectory()
-    
-    wsg_source = builder.AddSystem(TrajectorySource(traj_wsg_command))
+
+    return create_differential_controller_on_trajectory(builder, plant, input_iiwa_position_port,
+                                                        traj.MakeDerivative(),
+                                                        traj_wsg_command)
+
+
+def create_differential_controller_on_trajectory(builder,
+                                                 plant,
+                                                 input_iiwa_position_port,
+                                                 gripper_velocity_trajectory,
+                                                 wsg_grajectory):
+
+    wsg_source = builder.AddSystem(TrajectorySource(wsg_grajectory))
     wsg_source.set_name("wsg_command")
     
-    V_G_source = builder.AddSystem(TrajectorySource(traj_V_G))
+    V_G_source = builder.AddSystem(TrajectorySource(gripper_velocity_trajectory))
     V_G_source.set_name("v_WG")
+
     controller = builder.AddSystem(PseudoInverseController(plant))
     controller.set_name("PseudoInverseController")
     builder.Connect(V_G_source.get_output_port(), controller.GetInputPort("V_WG"))
@@ -105,4 +117,4 @@ def create_differential_controller(builder, plant, input_iiwa_position_port, X_G
     builder.Connect(input_iiwa_position_port, controller.GetInputPort("iiwa_position"))
     
     return integrator.get_output_port(), wsg_source.get_output_port(), integrator
-    
+
