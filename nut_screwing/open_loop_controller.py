@@ -286,8 +286,9 @@ def create_q_keyframes(timestamps, keyframe_poses, plant, station):
             q_keyframes.append(q_keyframes[-1])
             continue
 
+        q_nominal = np.array([0., -1.57, 0.1, 0, -1.2, 0, 1.6, 0, 0, 0])
         # q_nominal = np.array([0., 0.,  1.51609774,  0., -0.78808917, 0.,  2.36662405,  0., 0., 0.]) # nominal joint for joint-centering.
-        q_nominal = np.array([0., 0., 0.6, 0., -1.75, 0., 1., 0., 0., 0.])
+        # q_nominal = np.array([0., 0., 0.6, 0., -1.75, 0., 1., 0., 0., 0.])
         #q_nominal = np.array([0., -1.56702176,  1.33784888, 0.00572793, -1.24946957, -0.002234, 2.05829444, 0.00836547, 0., 0.])
         ik = inverse_kinematics.InverseKinematics(plant)
         q_variables = ik.q() # Get variables for MathematicalProgram
@@ -303,15 +304,8 @@ def create_q_keyframes(timestamps, keyframe_poses, plant, station):
             prog.SetInitialGuess(q_variables, q_nominal)
         else:
             prog.SetInitialGuess(q_variables, q_keyframes[-1])
-        #else:
-        #    prog.SetInitialGuess(q_variables, q_target)
         
         prog.AddCost(np.square(np.dot(q_variables, q_target))) #q_nominal
-
-        if 10. < keyframe_timestamp < 16. and False:
-            pass
-            #cc_evaluate = lambda q : cc.evaluate(q) /10.
-            #prog.AddCost(cc_evaluate, vars=q_variables)
 
         if keyframe_timestamp < 16.:
             p_GG_lower = np.array([-0.1, -0.1, -0.1])
@@ -321,9 +315,9 @@ def create_q_keyframes(timestamps, keyframe_poses, plant, station):
                 p_GG_upper[2] = distance
                 if keyframe_timestamp > 14:
                     p_GG_upper[2] = 0
-            pass        
-            #AddPositionConstraint(ik, plant.world_frame(), keyframe_pose.translation(),
-            #                      p_GG_lower, p_GG_upper)
+
+            AddPositionConstraint(plant, ik, plant.world_frame(),
+                                  keyframe_pose.translation(), p_GG_lower, p_GG_upper)
         
         if 5. < keyframe_timestamp < 16.:
             theta_0 = min(3. / keyframe_timestamp + 0.15, np.pi / 4)
