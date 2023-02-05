@@ -8,6 +8,7 @@ py_library(
         "sim_helper.py",
         "differential_controller.py",
         "open_loop_controller.py",
+        "experimental_controller.py",
         "state_monitor.py",
     ],
     visibility = [":__pkg__"],

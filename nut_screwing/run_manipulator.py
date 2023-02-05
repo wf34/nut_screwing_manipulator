@@ -23,8 +23,10 @@ from pydrake.multibody.parsing import Parser
 import nut_screwing.sim_helper as sh
 import nut_screwing.differential_controller as diff_c
 import nut_screwing.open_loop_controller as ol_c
+import nut_screwing.experimental_controller as e_c
 import nut_screwing.state_monitor as sm
 
+EXPERIMENTAL = 'experimental'
 DIFF_IK = 'differential'
 OPEN_IK = 'open_loop'
 
@@ -47,12 +49,12 @@ def add_manipuland(plant):
 def set_iiwa_default_position(plant):
     iiwa_model_instance = plant.GetModelInstanceByName('iiwa')
     indices = plant.GetJointIndices(model_instance=iiwa_model_instance)
-    q0_iiwa = [-1.57, 0.1, 0, -1.2, 0, 1.6]
+    q0_iiwa = e_c.IIWA_DEFAULT_POSITION
     for i, q in zip(indices, q0_iiwa):
         ith_rev_joint = plant.get_mutable_joint(joint_index=i)
         if isinstance(ith_rev_joint, RevoluteJoint_[float]):
             ith_rev_joint.set_default_angle(q)
-        print(type(ith_rev_joint), q, i)
+        # print(type(ith_rev_joint), q, i)
 
 
 def AddExternallyAppliedSpatialForce(builder, station):
@@ -180,12 +182,8 @@ def build_scene(meshcat, controller_type, log_destination):
     
     #X_O = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("nut"))}
     
-    print('X_G[_initial]', X_G['initial'])
-    print('X_O[_initial]', X_O['initial'])
-    
     X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
     X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
-    #print(X_O, X_O['goal'], X_G)
     X_G, times = make_gripper_frames(X_G, X_O)
 
     if DIFF_IK == controller_type:
@@ -202,9 +200,18 @@ def build_scene(meshcat, controller_type, log_destination):
             ol_c.create_open_loop_controller(builder, plant, station,
                                              scene_graph, X_G, X_O,
                                              draw_frames)
+    elif EXPERIMENTAL == controller_type:
+        print('makes', EXPERIMENTAL)
+        input_iiwa_position_port = station.GetOutputPort("iiwa_position_measured")
+        output_iiwa_position_port, output_wsg_position_port, integrator = \
+            e_c.create_experimental_controller(builder, plant, input_iiwa_position_port,
+                                               temp_context, X_G)
     else:
         assert False, 'unreachable'
 
+    if not output_iiwa_position_port or not output_wsg_position_port:
+        print('controller has failed')
+        return
     builder.Connect(output_iiwa_position_port, station.GetInputPort("iiwa_position"))
     builder.Connect(output_wsg_position_port, station.GetInputPort("wsg_position"))
     builder.Connect(station.GetOutputPort("contact_results"), cv_system.contact_results_input_port())
@@ -239,6 +246,8 @@ def simulate_pick_adapted_to_nut(controller_type, log_destination):
     print('hello drake')
     meshcat = sh.StartMeshcat()
     simulator = build_scene(meshcat, controller_type, log_destination)
+    if not simulator:
+        return
     print('break line to view animation:')
     _ = sys.stdin.readline()
 
@@ -251,7 +260,7 @@ def simulate_pick_adapted_to_nut(controller_type, log_destination):
 
 def parse_args():
     parser = argparse.ArgumentParser(description=sys.argv[0])
-    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, OPEN_IK], help='what controls manipulator')
+    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, OPEN_IK, EXPERIMENTAL], help='what controls manipulator')
     parser.add_argument('-l', '--log_destination', default='', help='where to put telemetry')
     return vars(parser.parse_args())
 
