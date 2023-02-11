@@ -16,7 +16,8 @@ from pydrake.all import (
     DiagramBuilder,
     MeshcatVisualizer,
     Simulator,
-    ContactVisualizer, ContactVisualizerParams
+    ContactVisualizer, ContactVisualizerParams,
+    MeshcatVisualizerParams, Role
 )
 from pydrake.multibody.parsing import Parser
 
@@ -202,10 +203,17 @@ def build_scene(meshcat, controller_type, log_destination):
                                              draw_frames)
     elif EXPERIMENTAL == controller_type:
         print('makes', EXPERIMENTAL)
+        #visualizer = MeshcatVisualizer.AddToBuilder(
+        #    builder, scene_graph, meshcat,
+        #    MeshcatVisualizerParams(role=Role.kIllustration))
+        meshcat.Delete()
+        visualizer = MeshcatVisualizer.AddToBuilder(
+            builder, station.GetOutputPort("query_object"), meshcat)
+        diagram = builder.Build()
         input_iiwa_position_port = station.GetOutputPort("iiwa_position_measured")
         output_iiwa_position_port, output_wsg_position_port, integrator = \
             e_c.create_experimental_controller(builder, plant, input_iiwa_position_port,
-                                               temp_context, X_G)
+                                               diagram.CreateDefaultContext(), X_G, visualizer)
     else:
         assert False, 'unreachable'
 

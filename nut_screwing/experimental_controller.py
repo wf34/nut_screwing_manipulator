@@ -2,6 +2,7 @@
 import numpy as np
 
 from pydrake.all import (
+    BsplineTrajectory,
     MultibodyPlant,
     KinematicTrajectoryOptimization,
     PiecewisePolynomial, Solve,
@@ -12,7 +13,7 @@ from nut_screwing.differential_controller import create_differential_controller_
 
 IIWA_DEFAULT_POSITION = [-1.57, 0.1, 0, -1.2, 0, 1.6, 0]
 
-def get_default_plant_position_with_inf(plant):
+def get_default_plant_position_with_inf(plant, plant_context):
     iiwa_model_instance = plant.GetModelInstanceByName('iiwa')
     indices = list(map(int, plant.GetJointIndices(model_instance=iiwa_model_instance)))
     n = plant.num_positions()
@@ -22,7 +23,7 @@ def get_default_plant_position_with_inf(plant):
         plant_0[i] = q
         plant_inf[i, i] = 1
     # print(plant_0, '\n', plant_inf)
-    return plant_0, plant_inf
+    return  plant.GetPositions(plant_context), plant_inf
 
 
 def make_wsg_command_trajectory(time_end):
@@ -34,9 +35,36 @@ def make_wsg_command_trajectory(time_end):
         np.hstack([[opened], [opened]]))
 
 
-def create_experimental_controller(builder, plant, input_iiwa_position_port, context, X_G):
+def PublishPositionTrajectory(trajectory,
+                              root_context,
+                              plant,
+                              visualizer,
+                              time_step=1.0 / 33.0):
+    """
+    Args:
+        trajectory: A Trajectory instance.
+    """
+    plant_context = plant.GetMyContextFromRoot(root_context)
+    visualizer_context = visualizer.GetMyContextFromRoot(root_context)
+
+    visualizer.StartRecording(False)
+
+    for t in np.append(
+            np.arange(trajectory.start_time(), trajectory.end_time(),
+                      time_step), trajectory.end_time()):
+        root_context.SetTime(t)
+        plant.SetPositions(plant_context, trajectory.value(t))
+        visualizer.ForcedPublish(visualizer_context)
+
+    visualizer.StopRecording()
+    visualizer.PublishRecording()
+
+
+def create_experimental_controller(builder, plant, input_iiwa_position_port, context, X_G, v):
     for n in ['initial', 'prepick']:
         assert n in X_G
+
+    plant_context = plant.GetMyContextFromRoot(context)
 
     def print_model_dofs(model_name):
         iiwa_model_instance = plant.GetModelInstanceByName(model_name)
@@ -46,7 +74,7 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
             ith_joint = plant.get_joint(joint_index=i)
             print('{}th joint!! parent: {} child: {}; own name: {}'.format(i, ith_joint.parent_body().name(), ith_joint.child_body().name(), ith_joint.name()))
 
-    q0, inf0 = get_default_plant_position_with_inf(plant)
+    q0, inf0 = get_default_plant_position_with_inf(plant, plant_context)
     print_model_dofs('iiwa')
     print_model_dofs('gripper')
     print_model_dofs('nut_and_bolt')
@@ -62,8 +90,15 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
     trajopt = KinematicTrajectoryOptimization(num_q, 10)
     print('after c-tor')
     prog = trajopt.get_mutable_prog()
-    trajopt.AddDurationCost(1.0)
-    trajopt.AddPathLengthCost(1.0)
+
+    q_guess = np.tile(q0.reshape((num_q, 1)), (1, trajopt.num_control_points()))
+    q_guess[0,:] = np.linspace(0, -np.pi/2, trajopt.num_control_points())
+    path_guess = BsplineTrajectory(trajopt.basis(), q_guess)
+    trajopt.SetInitialGuess(path_guess)
+
+    trajopt.AddDurationCost(1)
+    trajopt.AddPathLengthCost(1)
+
     print('after first 2')
     #iiwa_position_limits_lower = plant.GetPositionLowerLimits()[2:9]
     #iiwa_position_limits_upper = plant.GetPositionUpperLimits()[2:9]
@@ -88,13 +123,12 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
 
     trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
     print('after first 4')
-    trajopt.AddDurationConstraint(.5, 5)
+    trajopt.AddDurationConstraint(5., 50.)
 
     X_WStart = X_G['initial']
     X_WGoal = X_G['prepick']
         
     gripper_frame = plant.GetBodyByName("body").body_frame()
-    plant_context = plant.GetMyContextFromRoot(context)
 
     # start constraint
     start_constraint = PositionConstraint(plant, plant.world_frame(),
@@ -115,8 +149,8 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
                                          [0, 0.1, 0],
                                          plant_context)
     trajopt.AddPathPositionConstraint(goal_constraint, 1)
-    prog.AddQuadraticErrorCost(inf0, q0,
-                               trajopt.control_points()[:, -1])
+    #prog.AddQuadraticErrorCost(inf0, q0,
+    #                           trajopt.control_points()[:, -1])
 
     # start and end with zero velocity
     trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
@@ -124,15 +158,30 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
     trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
         (num_q, 1)), 1)
 
+    #def PlotPath(control_points):
+    #    traj = BsplineTrajectory(trajopt.basis(),
+    #                             control_points.reshape((3, -1)))
+    #    meshcat.SetLine('positions_path',
+    #                     traj.vector_values(np.linspace(0, 1, 50)))
+
+    #prog.AddVisualizationCallback(PlotPath,
+    #                              trajopt.control_points().reshape((-1,)))
     result = Solve(prog)
     if not result.is_success():
         print("Trajectory optimization failed, even without collisions!")
         print(result.get_solver_id().name())
         print(dir(result))
         print(result.GetInfeasibleConstraintNames(prog, 1.e-2))
-        return [None] * 3
-    else:
+        #return [None] * 3
+        #result = 
+    if True:
         traj_X_G = trajopt.ReconstructTrajectory(result)
+        print(traj_X_G.start_time(), traj_X_G.end_time(),
+              traj_X_G.rows(), traj_X_G.cols())
+        PublishPositionTrajectory(traj_X_G, context, plant, v)
+        exit()
+        traj_X_G = traj_X_G.CopyBlock(2, 0, 6, 1) # remove a hack from here
+
         traj_wsg_command = make_wsg_command_trajectory(traj_X_G.end_time())
         return create_differential_controller_on_trajectory(builder, plant,
                                                             input_iiwa_position_port,
