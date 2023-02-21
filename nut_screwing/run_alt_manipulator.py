@@ -22,11 +22,11 @@ def AddWsg(plant,
     if welded:
         if sphere:
             gripper = parser.AddModelFromFile(
-                FindResourceOrThrow("drake/manipulation/models/wsg_50_description/sdf/schunk_wsg_50_welded_fingers_sphere.sdf"),
+                FindResource("models/schunk_wsg_50_welded_fingers_sphere.sdf"),
                 "gripper")
         else:
             gripper = parser.AddModelFromFile(
-                FindResourceOrThrow("drake/manipulation/models/wsg_50_description/sdf/schunk_wsg_50_welded_fingers.sdf"),
+                FindResource("models/schunk_wsg_50_welded_fingers.sdf"),
                 "gripper")
     else:
         gripper = parser.AddModelFromFile(
@@ -323,6 +323,6 @@ def trajopt_bins_demo():
         collision_visualizer.GetMyContextFromRoot(context))
 
 
-trajopt_bins_demo()
-#trajopt_shelves_demo()
+#trajopt_bins_demo()
+trajopt_shelves_demo()
 
