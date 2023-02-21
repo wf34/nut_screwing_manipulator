@@ -47,6 +47,16 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "run_alt_manipulator",
+    srcs = ["run_alt_manipulator.py"],
+    data = ["models"],
+    deps = [
+        "@drake//bindings/pydrake",
+        "@bazel_tools//tools/python/runfiles",
+    ],
+)
+
 py_test(
     name = "nut_screwing_test",
     srcs = [
