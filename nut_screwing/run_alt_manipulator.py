@@ -1,13 +1,16 @@
 import time
 import os
- 
+import sys
+
 import numpy as np
 from pydrake.all import (AddMultibodyPlantSceneGraph, BsplineTrajectory,
                          DiagramBuilder, KinematicTrajectoryOptimization,
                          MeshcatVisualizer, MeshcatVisualizerParams,
                          MinimumDistanceConstraint, Parser, PositionConstraint,
                          Rgba, RigidTransform, Role, Solve, Sphere,
-                         StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath)
+                         StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath, MeshcatCone)
+
+#from scenarios import AddWsg, AddIiwa
 
 def FindResource(filename):
     return os.path.join(os.path.dirname(__file__), filename)
@@ -47,6 +50,7 @@ def AddIiwa(plant, collision_model="no_collision"):
 
     parser = Parser(plant)
     iiwa = parser.AddModelFromFile(sdf_path)
+    print(iiwa, type(iiwa), dir(iiwa), plant.GetModelInstanceName(iiwa))
     plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("iiwa_link_0"))
 
     # Set default positions:
@@ -84,6 +88,7 @@ def PublishPositionTrajectory(trajectory,
                               root_context,
                               plant,
                               visualizer,
+                              meshcat=None,
                               time_step=1.0 / 33.0):
     """
     Args:
@@ -93,12 +98,25 @@ def PublishPositionTrajectory(trajectory,
     visualizer_context = visualizer.GetMyContextFromRoot(root_context)
 
     visualizer.StartRecording(False)
+    blue = np.array([0., 0., 1., 1.])
+    green = np.array([0., 1., 0., 1.])
 
+    dur = trajectory.end_time()  - trajectory.start_time()
     for t in np.append(
             np.arange(trajectory.start_time(), trajectory.end_time(),
                       time_step), trajectory.end_time()):
-        root_context.SetTime(t)
         plant.SetPositions(plant_context, trajectory.value(t))
+        if meshcat:
+            a = t / dur
+            assert 0. <= a and a <= 1.
+            b = 1. - a
+            mixture = a * blue + b * green
+            root_context.SetTime(t)
+            X_W_G = plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body"))
+            curr_point = 'point_{}'.format(t)
+            meshcat.SetObject(curr_point, Sphere(0.01), rgba=Rgba(*mixture.tolist()))
+            meshcat.SetTransform(curr_point, X_W_G)
+
         visualizer.ForcedPublish(visualizer_context)
 
     visualizer.StopRecording()
@@ -120,6 +138,11 @@ def trajopt_shelves_demo():
     meshcat.SetTransform("goal", X_WGoal)
 
     parser = Parser(plant)
+    bin = parser.AddModelFromFile(
+        FindResource("models/shelves.sdf"))
+    plant.WeldFrames(plant.world_frame(),
+                     plant.GetFrameByName("shelves_body", bin),
+                     RigidTransform([0.88, 0, 0.4]))
     plant.Finalize()
 
     visualizer = MeshcatVisualizer.AddToBuilder(
@@ -135,12 +158,14 @@ def trajopt_shelves_demo():
     plant_context = plant.GetMyContextFromRoot(context)
 
     num_q = plant.num_positions()
+    print('plant dimensionality :', num_q);
+
     q0 = plant.GetPositions(plant_context)
     gripper_frame = plant.GetFrameByName("body", wsg)
 
-    trajopt = KinematicTrajectoryOptimization(plant.num_positions(), 10)
+    trajopt = KinematicTrajectoryOptimization(plant.num_positions(), 9)
     prog = trajopt.get_mutable_prog()
-    trajopt.AddDurationCost(1.0)
+    trajopt.AddDurationCost(100.0)
     trajopt.AddPathLengthCost(1.0)
     trajopt.AddPositionBounds(plant.GetPositionLowerLimits(),
                               plant.GetPositionUpperLimits())
@@ -179,7 +204,14 @@ def trajopt_shelves_demo():
     if not result.is_success():
         print("Trajectory optimization failed, even without collisions!")
         print(result.get_solver_id().name())
+    else:
+        print("Trajectory optimization succeded, when without collisions!")
+        print(result.get_solver_id().name())
+        opt_sol = result.GetSolution()
+        print(' - opt_sol:', opt_sol.shape, dir(result))
+
     trajopt.SetInitialGuess(trajopt.ReconstructTrajectory(result))
+
 
     # collision constraints
     collision_constraint = MinimumDistanceConstraint(plant, 0.001,
@@ -194,18 +226,23 @@ def trajopt_shelves_demo():
         meshcat.SetLine('positions_path',
                          traj.vector_values(np.linspace(0, 1, 50)))
 
+    print('trajopt.control_points().shape:', trajopt.control_points().shape)
+
     prog.AddVisualizationCallback(PlotPath,
                                   trajopt.control_points().reshape((-1,)))
     result = Solve(prog)
     if not result.is_success():
         print("Trajectory optimization failed")
         print(result.get_solver_id().name())
+    else:
+        print('constrained optimization succeeds')
 
     PublishPositionTrajectory(trajopt.ReconstructTrajectory(result), context,
-                              plant, visualizer)
+                              plant, visualizer, meshcat)
     collision_visualizer.ForcedPublish(
         collision_visualizer.GetMyContextFromRoot(context))
-
+    print('break line to view animation:')
+    _ = sys.stdin.readline()
 
 def AddPackagePaths(parser):
     # Remove once https://github.com/RobotLocomotion/drake/issues/10531 lands.
@@ -261,9 +298,10 @@ def trajopt_bins_demo():
     q0 = plant.GetPositions(plant_context)
     gripper_frame = plant.GetFrameByName("body", wsg)
 
-    trajopt = KinematicTrajectoryOptimization(plant.num_positions(), 10)
+    trajopt = KinematicTrajectoryOptimization(plant.num_positions(), 4)
     prog = trajopt.get_mutable_prog()
 
+    # 
     q_guess = np.tile(q0.reshape((7,1)), (1, trajopt.num_control_points()))
     q_guess[0,:] = np.linspace(0, -np.pi/2, trajopt.num_control_points())
     path_guess = BsplineTrajectory(trajopt.basis(), q_guess)
@@ -321,7 +359,8 @@ def trajopt_bins_demo():
                               plant, visualizer)
     collision_visualizer.ForcedPublish(
         collision_visualizer.GetMyContextFromRoot(context))
-
+    print('break line to view animation:')
+    _ = sys.stdin.readline()
 
 #trajopt_bins_demo()
 trajopt_shelves_demo()

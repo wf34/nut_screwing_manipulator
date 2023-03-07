@@ -8,7 +8,7 @@ from pydrake.all import (
     PositionConstraint
 )
 
-from nut_screwing.differential_controller import create_differential_controller_on_trajectory
+from differential_controller import create_differential_controller_on_trajectory
 
 IIWA_DEFAULT_POSITION = [-1.57, 0.1, 0, -1.2, 0, 1.6, 0]
 

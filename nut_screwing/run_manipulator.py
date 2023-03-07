@@ -1,18 +1,21 @@
 import argparse
 import time
+import os
 import sys
 
 import numpy as np
 
-from bazel_tools.tools.python.runfiles import runfiles
+#from bazel_tools.tools.python.runfiles import runfiles
 
 from pydrake.examples.manipulation_station import ManipulationStation
 from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
 from pydrake.common.eigen_geometry import AngleAxis
 from pydrake.multibody.tree import RevoluteJoint_
 from pydrake.geometry import Rgba
+from pydrake.systems.primitives import ConstantVectorSource
 
 from pydrake.all import (
+    AddMultibodyPlantSceneGraph,
     DiagramBuilder,
     MeshcatVisualizer,
     Simulator,
@@ -20,19 +23,23 @@ from pydrake.all import (
 )
 from pydrake.multibody.parsing import Parser
 
-import nut_screwing.sim_helper as sh
-import nut_screwing.differential_controller as diff_c
-import nut_screwing.open_loop_controller as ol_c
-import nut_screwing.experimental_controller as e_c
-import nut_screwing.state_monitor as sm
+import sim_helper as sh
+import differential_controller as diff_c
+import open_loop_controller as ol_c
+import experimental_controller as e_c
+import state_monitor as sm
+import run_alt_manipulator as ram
 
 EXPERIMENTAL = 'experimental'
 DIFF_IK = 'differential'
 OPEN_IK = 'open_loop'
 
 def get_manipuland_resource_path():
-    manifest = runfiles.Create()
-    return manifest.Rlocation('control_nut_screwing_manipulator/resources/bolt_and_nut.sdf')
+    #manifest = runfiles.Create()
+    #. manifest.Rlocation
+    proj_dir = os.environ.get('CNSM_PATH')
+    assert proj_dir and os.path.isdir(proj_dir), proj_dir
+    return os.path.join(proj_dir, 'resources/bolt_and_nut.sdf')
 
 
 def add_manipuland(plant):
@@ -46,8 +53,8 @@ def add_manipuland(plant):
     return bolt_with_nut
 
 
-def set_iiwa_default_position(plant):
-    iiwa_model_instance = plant.GetModelInstanceByName('iiwa')
+def set_iiwa_default_position(plant, iiwa_model_name='iiwa7'):
+    iiwa_model_instance = plant.GetModelInstanceByName(iiwa_model_name)
     indices = plant.GetJointIndices(model_instance=iiwa_model_instance)
     q0_iiwa = e_c.IIWA_DEFAULT_POSITION
     for i, q in zip(indices, q0_iiwa):
@@ -148,31 +155,36 @@ def AddContactsSystem(meshcat, builder):
 
 def build_scene(meshcat, controller_type, log_destination):
     builder = DiagramBuilder()
-    station = builder.AddSystem(ManipulationStation())
-    station.SetupNutStation()
-    plant = station.get_multibody_plant()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=0.001)
+    iiwa = ram.AddIiwa(plant, collision_model="with_box_collision")
+    wsg = ram.AddWsg(plant, iiwa, welded=True, sphere=True)
+    #station.SetupManipulationClassStation()  # .SetupNutStation()
+    #plant = station.get_multibody_plant()
+
+    bolt_with_nut = add_manipuland(plant)
+    zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
+    print(bolt_with_nut, type(bolt_with_nut), '<<<<<<<<<<<<<<<<')
     cv_system = AddContactsSystem(meshcat, builder)
-    station.Finalize()
+    plant.Finalize()
+    nut_input_port = plant.get_actuation_input_port(model_instance=bolt_with_nut)
+
     set_iiwa_default_position(plant)
     body_frames_visualization = False
 
     # Find the initial pose of the gripper (as set in the default Context)
-    temp_context = station.CreateDefaultContext()
     plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
-    scene_graph = station.get_scene_graph()
     
     if body_frames_visualization:
         display_bodies_frames(plant, scene_graph)
             
-    temp_st_context = station.GetMyContextFromRoot(temp_context)
-    temp_plant_context = plant.GetMyContextFromRoot(temp_context)
-    
+    context = diagram.CreateDefaultContext()
+    plant_context = plant.GetMyContextFromRoot(context)
     #q0 =[-1.56702176,  1.33784888,  0.00572793, -1.24946957, -0.002234,    2.05829444,
     #  0.00836547]
     #station.SetIiwaPosition(temp_st_context, q0)
     
     
-    X_G = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("body"))}
+    X_G = {"initial": plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body"))}
     
     X_O = {"initial": RigidTransform(RotationMatrix(
         [[1.0, 0.0, 0.0],
@@ -215,7 +227,7 @@ def build_scene(meshcat, controller_type, log_destination):
     builder.Connect(output_iiwa_position_port, station.GetInputPort("iiwa_position"))
     builder.Connect(output_wsg_position_port, station.GetInputPort("wsg_position"))
     builder.Connect(station.GetOutputPort("contact_results"), cv_system.contact_results_input_port())
-    
+    builder.Connect(zero_torque_system.get_output_port(0), nut_input_port)
     meshcat.Delete()
     visualizer = MeshcatVisualizer.AddToBuilder(
         builder, station.GetOutputPort("query_object"), meshcat)
