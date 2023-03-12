@@ -7,15 +7,11 @@ import numpy as np
 
 import pydot
 
-#from bazel_tools.tools.python.runfiles import runfiles
-
-from pydrake.examples.manipulation_station import ManipulationStation
 from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
 from pydrake.common.eigen_geometry import AngleAxis
 from pydrake.multibody.tree import RevoluteJoint_
 from pydrake.geometry import Rgba
 from pydrake.systems.primitives import Adder, ConstantVectorSource, Demultiplexer, PassThrough
-
 
 from pydrake.all import (
     AddMultibodyPlantSceneGraph,
@@ -69,9 +65,8 @@ def set_iiwa_default_position(plant, iiwa_model_name='iiwa7'):
     q0_iiwa = e_c.IIWA_DEFAULT_POSITION
     for i, q in zip(indices, q0_iiwa):
         ith_rev_joint = plant.get_mutable_joint(joint_index=i)
-        if isinstance(ith_rev_joint, RevoluteJoint_[float]):
-            ith_rev_joint.set_default_angle(q)
-        # print(type(ith_rev_joint), q, i)
+        assert isinstance(ith_rev_joint, RevoluteJoint_[float])
+        ith_rev_joint.set_default_angle(q)
 
 
 def AddExternallyAppliedSpatialForce(builder, station):
@@ -148,20 +143,14 @@ def make_gripper_frames(X_G, X_O):
     return X_G, times
 
 
-def AddContactsSystem(meshcat, builder):
+def AddContactsSystem(builder, plant, meshcat):
     cv_params = ContactVisualizerParams()
-    cv_params.publish_period = 0.05
-    cv_params.default_color = Rgba(0.5, 0.5, 0.5)
-    cv_params.prefix = "py_visualizer"
-    cv_params.delete_on_initialization_event = False
-    cv_params.force_threshold = 0.2
-    cv_params.newtons_per_meter = 50
-    cv_params.radius = 0.001
-
-    cv_vis = ContactVisualizer(meshcat=meshcat, params=cv_params)
-    cv_system = builder.AddSystem(cv_vis)
-    cv_system.set_name('contact_visualizer')
-    return cv_system
+    #cv_params.publish_period = 0.05
+    #cv_params.default_color = Rgba(0.5, 0.5, 0.5)
+    cv_params.force_threshold = 1e-6
+    cv_params.newtons_per_meter = 1.0
+    cv_params.radius = 0.002
+    ContactVisualizer.AddToBuilder(builder, plant, meshcat, cv_params)
 
 
 def create_iiwa_position_measured_port(builder, plant, iiwa):
@@ -176,7 +165,6 @@ def create_iiwa_position_measured_port(builder, plant, iiwa):
     controller_iiwa = ram.AddIiwa(controller_plant, collision_model="with_box_collision")
     ram.AddWsg(controller_plant, controller_iiwa, welded=True, sphere=True)
     controller_plant.Finalize()
-    print('controller_plant.num_positions()  --->>> ', controller_plant.num_positions())
 
     iiwa_controller = builder.AddSystem(
                 InverseDynamicsController(controller_plant,
@@ -247,10 +235,9 @@ def build_scene(meshcat, controller_type, log_destination):
 
     bolt_with_nut = add_manipuland(plant)
     zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
-    #zero_torque_system7 = builder.AddSystem(ConstantVectorSource(np.zeros(7)))
 
-    cv_system = AddContactsSystem(meshcat, builder)
     plant.Finalize()
+    AddContactsSystem(builder, plant, meshcat)
 
     nut_input_port = plant.get_actuation_input_port(model_instance=bolt_with_nut)
     iiwa_actuation_input_port = plant.get_actuation_input_port(model_instance=iiwa)
@@ -265,21 +252,30 @@ def build_scene(meshcat, controller_type, log_destination):
         display_bodies_frames(plant, scene_graph)
 
     # 2023.03.12 terrible hack
+    #q0 =[-1.56702176,  1.33784888,  0.00572793, -1.24946957, -0.002234,    2.05829444, 0.00836547]
     #diagram1 = builder.Build()
     #context = diagram1.CreateDefaultContext()
     #plant_context = plant.GetMyContextFromRoot(context)
-    #q0 =[-1.56702176,  1.33784888,  0.00572793, -1.24946957, -0.002234,    2.05829444,
-    #  0.00836547]
-    #station.SetIiwaPosition(temp_st_context, q0)
+    #plant.SetPositions(plant_context, iiwa, q0)
+    #print('--------- X_G:\n', plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body")))
+    #exit(0)
 
     X_G = {"initial":
-    # plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body"))}
-    # print('x g initial ->', X_G['initial'])
-      RigidTransform(R=RotationMatrix([
-          [0.9999996829318348, 0.00019052063137842194, -0.0007731999219133522],
-          [0.0007963267107334455, -0.23924925335563643, 0.9709578572896668],
-          [1.868506971441006e-16, -0.9709581651495911, -0.23924932921398248],]),
-      p=[0.0003707832187589983, -0.4656168080232464, 0.6793215789060889],)}
+     # RigidTransform(  # for q0
+     # R=RotationMatrix([
+     #   [0.9999714767348318, -0.00668726957445363, 0.0035108606351723767],
+     #   [0.006437996669324517, 0.9977480605365171, 0.0667634622717067],
+     #   [-0.003949419659492201, -0.06673895505069322, 0.9977626541232617]]),
+     # p=[0.003291847009565643, -0.4288470085674748, 0.08166225217892638])
+
+     # this is for IIWA_DEFAULT_POSITION
+       RigidTransform(
+       R=RotationMatrix([
+           [0.9999996829318348, 0.00019052063137842194, -0.0007731999219133522],
+           [0.0007963267107334455, -0.23924925335563643, 0.9709578572896668],
+           [1.868506971441006e-16, -0.9709581651495911, -0.23924932921398248],]),
+       p=[0.0003707832187589983, -0.4656168080232464, 0.6793215789060889])
+    }
 
     X_O = {"initial": RigidTransform(RotationMatrix(
         [[1.0, 0.0, 0.0],
@@ -325,10 +321,9 @@ def build_scene(meshcat, controller_type, log_destination):
     builder.Connect(output_iiwa_position_port, desired_iiwa_position_port)
     builder.Connect(output_wsg_position_port, desired_wsg_position_port)
 
-    builder.Connect(plant.get_contact_results_output_port(), cv_system.contact_results_input_port())
+    # builder.Connect(plant.get_contact_results_output_port(), cv_system.contact_results_input_port())
     builder.Connect(zero_torque_system.get_output_port(0), nut_input_port)
 
-    #builder.Connect(zero_torque_system7.get_output_port(0), iiwa_actuation_input_port)
     meshcat.Delete()
 
     visualizer = MeshcatVisualizer.AddToBuilder(
@@ -341,7 +336,10 @@ def build_scene(meshcat, controller_type, log_destination):
     simulator = Simulator(diagram)
     state_monitor = sm.StateMonitor(log_destination, plant)
     simulator.set_monitor(state_monitor.callback)
-    #station.SetIiwaPosition(station.GetMyContextFromRoot(simulator.get_mutable_context()), q0)
+
+    plant_context = plant.GetMyContextFromRoot(simulator.get_mutable_context())
+    plant.SetPositions(plant_context, iiwa, e_c.IIWA_DEFAULT_POSITION)
+    print('--------- X_G:\n', plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body")))
 
     if integrator is not None:
         integrator.set_integral_value(
@@ -349,25 +347,18 @@ def build_scene(meshcat, controller_type, log_destination):
                 plant.GetPositions(plant.GetMyContextFromRoot(simulator.get_mutable_context()),
                                    plant.GetModelInstanceByName("iiwa7")))
     
-    simulator.set_target_realtime_rate(5.0)
-    simulator.AdvanceTo(0.1)
-    return simulator
+    return simulator, visualizer
 
 
 def simulate_nut_screwing(controller_type, log_destination):
     print('hello drake')
     meshcat = sh.StartMeshcat()
-    simulator = build_scene(meshcat, controller_type, log_destination)
+    simulator, visualizer = build_scene(meshcat, controller_type, log_destination)
     if not simulator:
         return
-    print('break line to view animation:')
-    _ = sys.stdin.readline()
-
-    #meshcat.start_recording()
-    simulator.set_target_realtime_rate(5.0)
+    visualizer.StartRecording(False)
     simulator.AdvanceTo(30)
-    #meshcat.stop_recording()
-    #meshcat.publish_recording()
+    visualizer.PublishRecording()
 
 
 def parse_args():

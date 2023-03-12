@@ -50,7 +50,6 @@ def AddIiwa(plant, collision_model="no_collision"):
 
     parser = Parser(plant)
     iiwa = parser.AddModelFromFile(sdf_path)
-    print(iiwa, type(iiwa), dir(iiwa), plant.GetModelInstanceName(iiwa))
     plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("iiwa_link_0"))
 
     # Set default positions:
@@ -362,6 +361,7 @@ def trajopt_bins_demo():
     print('break line to view animation:')
     _ = sys.stdin.readline()
 
-#trajopt_bins_demo()
-trajopt_shelves_demo()
 
+if '__main__' == __name__:
+    #trajopt_bins_demo()
+    trajopt_shelves_demo()
