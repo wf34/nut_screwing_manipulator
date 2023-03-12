@@ -46,7 +46,7 @@ class PseudoInverseController(LeafSystem):
         LeafSystem.__init__(self)
         self._plant = plant
         self._plant_context = plant.CreateDefaultContext()
-        self._iiwa = plant.GetModelInstanceByName("iiwa")
+        self._iiwa = plant.GetModelInstanceByName("iiwa7")
         self._G = plant.GetBodyByName("body").body_frame()
         self._W = plant.world_frame()
 
