@@ -168,6 +168,8 @@ def create_iiwa_position_measured_port(builder, plant, iiwa):
     num_iiwa_positions = plant.num_positions(iiwa)
     iiwa_output_state = plant.get_state_output_port(iiwa)
     demux = builder.AddSystem(Demultiplexer(size=num_iiwa_positions*2, output_ports_size=num_iiwa_positions))
+    builder.Connect(plant.get_state_output_port(iiwa),
+                    demux.get_input_port())
     builder.ExportOutput(demux.get_output_port(0), "iiwa_position_measured")
 
     controller_plant = MultibodyPlant(time_step=TIME_STEP)
@@ -196,10 +198,10 @@ def create_iiwa_position_measured_port(builder, plant, iiwa):
     builder.Connect(adder.get_output_port(),
                     plant.get_actuation_input_port(iiwa))
 
-    return demux.get_output_port(0)
+    return demux.get_output_port(0), iiwa_controller
 
 
-def create_iiwa_position_desired_port(builder, plant, iiwa):
+def create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller):
     num_iiwa_positions = plant.num_positions(iiwa)
     desired_state_from_position = builder.AddSystem(
                 StateInterpolatorWithDiscreteDerivative(
@@ -207,6 +209,8 @@ def create_iiwa_position_desired_port(builder, plant, iiwa):
                     TIME_STEP,
                     suppress_initial_transient=True))
     desired_state_from_position.set_name("iiwa_desired_state_from_position")
+    builder.Connect(desired_state_from_position.get_output_port(),
+                    iiwa_pid_controller.get_input_port_desired_state())
 
     iiwa_position = builder.AddSystem(PassThrough(num_iiwa_positions))
     #builder.ExportInput(iiwa_position.get_input_port(), "iiwa_position")
@@ -289,8 +293,9 @@ def build_scene(meshcat, controller_type, log_destination):
     X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
     X_G, times = make_gripper_frames(X_G, X_O)
 
-    measured_iiwa_position_port = create_iiwa_position_measured_port(builder, plant, iiwa)
-    desired_iiwa_position_port = create_iiwa_position_desired_port(builder, plant, iiwa)
+    measured_iiwa_position_port, iiwa_pid_controller = create_iiwa_position_measured_port(
+            builder, plant, iiwa)
+    desired_iiwa_position_port = create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller)
     desired_wsg_position_port = create_wsg_position_desired_port(builder, plant, wsg)
 
     if DIFF_IK == controller_type:
