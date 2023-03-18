@@ -85,6 +85,9 @@ def create_differential_controller(builder, plant, input_iiwa_position_port, X_G
 
     # Make the trajectories
     traj = make_gripper_trajectory(X_G, times)
+    print('start', traj.GetPose(time=0.).GetAsMatrix4()[2, 3])
+    print('pick_start', traj.GetPose(time=10.).GetAsMatrix4()[2, 3])
+    print('pick_end', traj.GetPose(time=17.).GetAsMatrix4()[2, 3])
     traj_wsg_command = make_wsg_command_trajectory(times)
     print('traj, number of segments', traj.get_number_of_segments())
     traj_V_G = traj.MakeDerivative()
