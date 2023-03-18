@@ -70,7 +70,8 @@ class PseudoInverseController(LeafSystem):
         q = self.q_port.Eval(context)
         self._plant.SetPositions(self._plant_context, self._iiwa, q)
         J_G = self._plant.CalcJacobianSpatialVelocity(
-            self._plant_context, JacobianWrtVariable.kV, 
+            self._plant_context,
+            JacobianWrtVariable.kV, 
             self._G, [0,0,0], self._W, self._W)
         J_G = J_G[:,self.iiwa_start:self.iiwa_end+1] # Only iiwa terms.
         v = np.linalg.pinv(J_G).dot(V_G)

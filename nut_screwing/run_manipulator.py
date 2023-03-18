@@ -237,7 +237,7 @@ def build_scene(meshcat, controller_type, log_destination):
     zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
 
     plant.Finalize()
-    AddContactsSystem(builder, plant, meshcat)
+    # AddContactsSystem(builder, plant, meshcat)
 
     nut_input_port = plant.get_actuation_input_port(model_instance=bolt_with_nut)
     iiwa_actuation_input_port = plant.get_actuation_input_port(model_instance=iiwa)
@@ -245,8 +245,6 @@ def build_scene(meshcat, controller_type, log_destination):
     set_iiwa_default_position(plant)
     body_frames_visualization = False
 
-    # Find the initial pose of the gripper (as set in the default Context)
-    plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
     
     if body_frames_visualization:
         display_bodies_frames(plant, scene_graph)
@@ -334,12 +332,15 @@ def build_scene(meshcat, controller_type, log_destination):
     pydot.graph_from_dot_data(diagram.GetGraphvizString(max_depth=2))[0].write_png('diagram.png')
 
     simulator = Simulator(diagram)
-    state_monitor = sm.StateMonitor(log_destination, plant)
-    simulator.set_monitor(state_monitor.callback)
+    if log_destination != '':
+        state_monitor = sm.StateMonitor(log_destination, plant)
+        simulator.set_monitor(state_monitor.callback)
 
     plant_context = plant.GetMyContextFromRoot(simulator.get_mutable_context())
     plant.SetPositions(plant_context, iiwa, e_c.IIWA_DEFAULT_POSITION)
     print('--------- X_G:\n', plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body")))
+    # Find the initial pose of the gripper (as set in the default Context)
+    plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
 
     if integrator is not None:
         integrator.set_integral_value(

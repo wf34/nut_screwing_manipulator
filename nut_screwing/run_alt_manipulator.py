@@ -37,7 +37,7 @@ def AddWsg(plant,
                 "drake/manipulation/models/"
                 "wsg_50_description/sdf/schunk_wsg_50_with_tip.sdf"))
 
-    X_7G = RigidTransform(RollPitchYaw(np.pi / 2.0, 0, roll), [0, 0, 0.09])
+    X_7G = RigidTransform(RollPitchYaw(np.pi / 2.0, 0, np.pi / 2.0), [0, 0, 0.114])
     plant.WeldFrames(plant.GetFrameByName("iiwa_link_7", iiwa_model_instance),
                      plant.GetFrameByName("body", gripper), X_7G)
     return gripper
