@@ -286,6 +286,8 @@ def build_scene(meshcat, controller_type, log_destination):
     X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
     X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
     X_G, times = make_gripper_frames(X_G, X_O)
+    print('prepick at {}; pick_start at {}, ends at {}.'.format(
+        times['prepick'], times['pick_start'], times['pick_end']))
 
     measured_iiwa_position_port, iiwa_pid_controller = create_iiwa_position_measured_port(
             builder, plant, iiwa)

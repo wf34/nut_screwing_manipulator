@@ -22,32 +22,33 @@ def parse_args():
 
 
 def euler_from_q(series_dict):
-    if not len(series_dict['quaternion_w']):
-        return []
+    assert len(series_dict['quaternion_w'])
 
     q = [series_dict['quaternion_w'][-1], series_dict['quaternion_x'][-1],
          series_dict['quaternion_y'][-1], series_dict['quaternion_z'][-1]]
 
     return np.degrees(tf.euler_from_quaternion(q))
 
+
 def read_telemetry(input_telemetry):
     assert os.path.exists(input_telemetry)
     EXTENDED_HEADER = sm.HEADER + sm.get_3_vector('euler')
     telemetry_series = {h : [] for h in EXTENDED_HEADER}
     with open(input_telemetry, 'r') as the_file:
-        has_header = csv.Sniffer().has_header(the_file.read(4096))
+        has_header = csv.Sniffer().has_header(the_file.read(14096))
         the_file.seek(0)
         reader = csv.DictReader(the_file, fieldnames=sm.HEADER, delimiter=' ')
         if has_header:
             next(reader)
+
         for row in reader:
-            for k, v in row.items():
-                if float(row['time']) > 4.:
+            row = dict(filter(lambda x: x[0] is not None, row.items()))
+            if float(row['time']) < 17.:
+                for k, v in row.items():
                     telemetry_series[k].append(float(v))
 
-            ea = euler_from_q(telemetry_series)
-            for k, v in zip(sm.get_3_vector('euler'), ea):
-                if float(row['time']) > 4.:
+                ea = euler_from_q(telemetry_series)
+                for k, v in zip(sm.get_3_vector('euler'), ea):
                     telemetry_series[k].append(v)
 
     return telemetry_series
@@ -63,15 +64,15 @@ def do_graphs(input_telemetry, output_graph):
     tx = axes_00_twin.plot(series[sm.TIME], series['translation_x'], label='translation', color='b')
     v_lx = axes[0, 0].plot(series[sm.TIME], series['velocity_l_x'], label='velocity', color='orange')
     a_lx = axes_00_twin.plot(series[sm.TIME], series['acceleration_l_x'], label='acceleration', color='r')
-    f_x = axes_00_twin.plot(series[sm.TIME], series['force_x'], label='force', color='k')
-    lines_00 = tx + v_lx + a_lx + f_x
+    #f_x = axes_00_twin.plot(series[sm.TIME], series['force_x'], label='force', color='k')
+    lines_00 = tx + v_lx + a_lx #+ f_x
     axes[0, 0].grid(color='k', linewidth=1, linestyle=':')
     axes[0, 0].legend(lines_00, [l.get_label() for l in lines_00])
 
     axes[0, 1].plot(series[sm.TIME], series['translation_y'], label='translation', color='b')
     axes[0, 1].plot(series[sm.TIME], series['velocity_l_y'], label='velocity', color='orange')
     axes[0, 1].plot(series[sm.TIME], series['acceleration_l_y'], label='acceleration', color='r')
-    axes[0, 1].plot(series[sm.TIME], series['force_y'], label='force', color='k')
+    #axes[0, 1].plot(series[sm.TIME], series['force_y'], label='force', color='k')
     axes[0, 1].grid(color='k', linewidth=1, linestyle=':')
     axes[0, 1].legend()
 
@@ -87,27 +88,27 @@ def do_graphs(input_telemetry, output_graph):
     ea_x = axes_10_twin.plot(series[sm.TIME], series['euler_x'], label='euler\'', color='b', linewidth=3)
     #axes[1, 0].plot(series[sm.TIME], series['velocity_a_x'], label='velocity', color='orange')
     #axes[1, 0].plot(series[sm.TIME], series['acceleration_a_x'], label='acceleration', color='r')
-    torque_x = axes[1, 0].plot(series[sm.TIME], series['torque_x'], label='force', color='k')
+    #torque_x = axes[1, 0].plot(series[sm.TIME], series['torque_x'], label='force', color='k')
     axes[1, 0].grid(color='k', linewidth=1, linestyle=':')
-    lines_10 = ea_x + torque_x
+    lines_10 = ea_x #+ torque_x
     axes[1, 0].legend(lines_10, [l.get_label() for l in lines_10])
 
     axes_11_twin = axes[1, 1].twinx()
     ea_y = axes_11_twin.plot(series[sm.TIME], series['euler_y'], label='euler\'', color='b', linewidth=3)
     #axes[1, 1].plot(series[sm.TIME], series['velocity_a_y'], label='velocity', color='orange')
     #axes[1, 1].plot(series[sm.TIME], series['acceleration_a_y'], label='acceleration', color='r')
-    torque_y = axes[1, 1].plot(series[sm.TIME], series['torque_y'], label='force', color='k')
+    #torque_y = axes[1, 1].plot(series[sm.TIME], series['torque_y'], label='force', color='k')
     axes[1, 1].grid(color='k', linewidth=1, linestyle=':')
-    lines_11 = ea_y + torque_y
+    lines_11 = ea_y #+ torque_y
     axes[1, 1].legend(lines_11, [l.get_label() for l in lines_11])
 
     axes_12_twin = axes[1, 2].twinx()
     ea_z = axes[1, 2].plot(series[sm.TIME], series['euler_z'], label='euler', color='b', linewidth=3)
     v_az = axes[1, 2].plot(series[sm.TIME], series['velocity_a_z'], label='velocity', color='orange')
     a_az = axes_12_twin.plot(series[sm.TIME], series['acceleration_a_z'], label='acceleration\'', color='r', linewidth=2)
-    torque_z = axes_12_twin.plot(series[sm.TIME], series['torque_z'], label='force\'', color='k', linewidth=1)
+    #torque_z = axes_12_twin.plot(series[sm.TIME], series['torque_z'], label='force\'', color='k', linewidth=1)
     axes[1, 2].grid(color='k', linewidth=1, linestyle=':')
-    lines_12 = ea_z + v_az + a_az + torque_z
+    lines_12 = ea_z + v_az + a_az #+ torque_z
     axes[1, 2].legend(lines_12, [l.get_label() for l in lines_12])
 
     fig.savefig(output_graph, bbox_inches='tight')

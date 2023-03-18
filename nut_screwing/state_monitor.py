@@ -17,7 +17,7 @@ QUATERNION = ['quaternion_w'] + get_3_vector('quaternion')
 VELOCITY = get_3_vector('velocity_a') + get_3_vector('velocity_l')
 ACCELERATION = get_3_vector('acceleration_a') + get_3_vector('acceleration_l')
 FORCE = get_3_vector('torque') + get_3_vector('force')
-HEADER = [TIME] + TRANSLATION + QUATERNION + VELOCITY + ACCELERATION + FORCE
+HEADER = [TIME] + TRANSLATION + QUATERNION + VELOCITY + ACCELERATION #+ FORCE
 
 
 def augment_datum(datum, keys, values):
@@ -60,13 +60,15 @@ class StateMonitor:
 
             augment_datum(datum, VELOCITY, velocity.get_coeffs())
             augment_datum(datum, ACCELERATION, acceleration.get_coeffs())
-            augment_datum(datum, FORCE, force.get_coeffs())
+
+            if force is not None:
+                augment_datum(datum, FORCE, force.get_coeffs())
 
             self._writer.writerow(datum)
             self._file.flush()
 
     def callback(self, root_context):
-        nut = self._plant.GetBodyByName("nut")
+        nut = self._plant.GetBodyByName("body")
         nut_context = self._plant.GetMyContextFromRoot(root_context)
         X_WB = nut.EvalPoseInWorld(nut_context)
 
@@ -89,6 +91,6 @@ class StateMonitor:
         self.add_data(root_context.get_time(),
                       X_WB,
                       nut.EvalSpatialVelocityInWorld(nut_context),
-                      nut.EvalSpatialAccelerationInWorld(nut_context),
-                      nut.GetForceInWorld(nut_context, multibody_forces))
+                      nut.EvalSpatialAccelerationInWorld(nut_context))
+                      #nut.GetForceInWorld(nut_context, multibody_forces))
         return EventStatus.DidNothing()
