@@ -156,7 +156,8 @@ def AddContactsSystem(builder, plant, meshcat):
 def create_iiwa_position_measured_port(builder, plant, iiwa):
     num_iiwa_positions = plant.num_positions(iiwa)
     iiwa_output_state = plant.get_state_output_port(iiwa)
-    demux = builder.AddSystem(Demultiplexer(size=num_iiwa_positions*2, output_ports_size=num_iiwa_positions))
+    demux = builder.AddSystem(Demultiplexer(size=num_iiwa_positions*2,
+                                            output_ports_size=num_iiwa_positions))
     builder.Connect(plant.get_state_output_port(iiwa),
                     demux.get_input_port())
     builder.ExportOutput(demux.get_output_port(0), "iiwa_position_measured")
@@ -303,7 +304,7 @@ def build_scene(meshcat, controller_type, log_destination):
         integrator = None
         draw_frames = True
         output_iiwa_position_port, output_wsg_position_port, kfs, joint_space_trajectory = \
-            ol_c.create_open_loop_controller(builder, plant, station,
+            ol_c.create_open_loop_controller(builder, plant,
                                              scene_graph, X_G, X_O,
                                              draw_frames)
     elif EXPERIMENTAL == controller_type:
@@ -324,7 +325,7 @@ def build_scene(meshcat, controller_type, log_destination):
     # builder.Connect(plant.get_contact_results_output_port(), cv_system.contact_results_input_port())
     builder.Connect(zero_torque_system.get_output_port(0), nut_input_port)
 
-    meshcat.Delete()
+    #meshcat.Delete()
 
     visualizer = MeshcatVisualizer.AddToBuilder(
         builder, scene_graph, meshcat)
@@ -338,11 +339,12 @@ def build_scene(meshcat, controller_type, log_destination):
         state_monitor = sm.StateMonitor(log_destination, plant)
         simulator.set_monitor(state_monitor.callback)
 
-    plant_context = plant.GetMyContextFromRoot(simulator.get_mutable_context())
-    plant.SetPositions(plant_context, iiwa, e_c.IIWA_DEFAULT_POSITION)
-    print('--------- X_G:\n', plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body")))
+    #plant_context = plant.GetMyContextFromRoot(simulator.get_mutable_context())
+    #plant.SetPositions(plant_context, iiwa, e_c.IIWA_DEFAULT_POSITION)
+    #print('--------- X_G:\n', plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body")))
     # Find the initial pose of the gripper (as set in the default Context)
     plant.mutable_gravity_field().set_gravity_vector([0, 0, 0])
+    simulator.Initialize()
 
     if integrator is not None:
         integrator.set_integral_value(
@@ -357,8 +359,16 @@ def simulate_nut_screwing(controller_type, log_destination):
     print('hello drake')
     meshcat = sh.StartMeshcat()
     simulator, visualizer = build_scene(meshcat, controller_type, log_destination)
+
+
+    web_url = meshcat.web_url()
+    print(f'Meshcat is now available at {web_url}')
+    os.system(f'xdg-open {web_url}')
+
     if not simulator:
+        os.sleep(5.)
         return
+
     visualizer.StartRecording(False)
     simulator.AdvanceTo(30)
     visualizer.PublishRecording()

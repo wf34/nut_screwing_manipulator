@@ -10,8 +10,8 @@ from pydrake.all import (AddMultibodyPlantSceneGraph, BsplineTrajectory,
                          Rgba, RigidTransform, Role, Solve, Sphere,
                          StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath, MeshcatCone)
 
-#from scenarios import AddWsg, AddIiwa
-
+from experimental_controller import IIWA_DEFAULT_POSITION
+import sim_helper as sh
 def FindResource(filename):
     return os.path.join(os.path.dirname(__file__), filename)
 
@@ -53,7 +53,7 @@ def AddIiwa(plant, collision_model="no_collision"):
     plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("iiwa_link_0"))
 
     # Set default positions:
-    q0 = [0.0, 0.1, 0, -1.2, 0, 1.6, 0]
+    q0 = IIWA_DEFAULT_POSITION
     index = 0
     for joint_index in plant.GetJointIndices(iiwa):
         joint = plant.get_mutable_joint(joint_index)
@@ -121,8 +121,7 @@ def PublishPositionTrajectory(trajectory,
     visualizer.StopRecording()
     visualizer.PublishRecording()
 
-def trajopt_shelves_demo():
-    meshcat = StartMeshcat()
+def trajopt_shelves_demo(meshcat):
     meshcat.Delete()
     builder = DiagramBuilder()
 
@@ -259,8 +258,7 @@ def AddPackagePaths(parser):
                      "manipulation/models/wsg_50_description"))
 
 
-def trajopt_bins_demo():
-    meshcat = StartMeshcat()
+def trajopt_bins_demo(meshcat):
     meshcat.Delete()
     builder = DiagramBuilder()
 
@@ -297,17 +295,16 @@ def trajopt_bins_demo():
     q0 = plant.GetPositions(plant_context)
     gripper_frame = plant.GetFrameByName("body", wsg)
 
-    trajopt = KinematicTrajectoryOptimization(plant.num_positions(), 4)
+    trajopt = KinematicTrajectoryOptimization(plant.num_positions(), 10)
     prog = trajopt.get_mutable_prog()
 
-    # 
     q_guess = np.tile(q0.reshape((7,1)), (1, trajopt.num_control_points()))
     q_guess[0,:] = np.linspace(0, -np.pi/2, trajopt.num_control_points())
     path_guess = BsplineTrajectory(trajopt.basis(), q_guess)
     trajopt.SetInitialGuess(path_guess)
 
     # Uncomment this to see the initial guess:
-    #PublishPositionTrajectory(path_guess, context, plant, visualizer)
+    # PublishPositionTrajectory(path_guess, context, plant, visualizer)
 
     trajopt.AddDurationCost(1.0)
     trajopt.AddPathLengthCost(1.0)
@@ -316,7 +313,7 @@ def trajopt_bins_demo():
     trajopt.AddVelocityBounds(plant.GetVelocityLowerLimits(),
                               plant.GetVelocityUpperLimits())
 
-    trajopt.AddDurationConstraint(.5, 50)
+    trajopt.AddDurationConstraint(5, 50)
 
     # start constraint
     start_constraint = PositionConstraint(plant, plant.world_frame(),
@@ -353,15 +350,18 @@ def trajopt_bins_demo():
     if not result.is_success():
         print("Trajectory optimization failed")
         print(result.get_solver_id().name())
+    else:
+        print("Trajectory optimization succeeded")
 
+    print('break line to view animation:')
+    _ = sys.stdin.readline()
     PublishPositionTrajectory(trajopt.ReconstructTrajectory(result), context,
                               plant, visualizer)
     collision_visualizer.ForcedPublish(
         collision_visualizer.GetMyContextFromRoot(context))
-    print('break line to view animation:')
-    _ = sys.stdin.readline()
 
 
 if '__main__' == __name__:
-    #trajopt_bins_demo()
-    trajopt_shelves_demo()
+    meshcat = sh.StartMeshcat()
+    #trajopt_bins_demo(meshcat)
+    trajopt_shelves_demo(meshcat)
