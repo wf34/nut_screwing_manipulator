@@ -250,30 +250,15 @@ def build_scene(meshcat, controller_type, log_destination):
     if body_frames_visualization:
         display_bodies_frames(plant, scene_graph)
 
-    # 2023.03.12 terrible hack
-    #q0 =[-1.56702176,  1.33784888,  0.00572793, -1.24946957, -0.002234,    2.05829444, 0.00836547]
-    #diagram1 = builder.Build()
-    #context = diagram1.CreateDefaultContext()
-    #plant_context = plant.GetMyContextFromRoot(context)
-    #plant.SetPositions(plant_context, iiwa, q0)
-    #print('--------- X_G:\n', plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body")))
-    #exit(0)
-
     X_G = {"initial":
-     # RigidTransform(  # for q0
-     # R=RotationMatrix([
-     #   [0.9999714767348318, -0.00668726957445363, 0.0035108606351723767],
-     #   [0.006437996669324517, 0.9977480605365171, 0.0667634622717067],
-     #   [-0.003949419659492201, -0.06673895505069322, 0.9977626541232617]]),
-     # p=[0.003291847009565643, -0.4288470085674748, 0.08166225217892638])
-
-     # this is for IIWA_DEFAULT_POSITION
        RigidTransform(
-       R=RotationMatrix([
-           [0.9999996829318348, 0.00019052063137842194, -0.0007731999219133522],
-           [0.0007963267107334455, -0.23924925335563643, 0.9709578572896668],
-           [1.868506971441006e-16, -0.9709581651495911, -0.23924932921398248],]),
-       p=[0.0003707832187589983, -0.4656168080232464, 0.6793215789060889])
+        R=RotationMatrix([
+            [0.9999996829318348, 0.00019052063137842194, -0.0007731999219133522],
+            [0.0007963267107334455, -0.23924925335563643, 0.9709578572896668],
+            [1.868506971441006e-16, -0.9709581651495911, -0.23924932921398248],
+          ]),
+          p=[0.0003753557139120804, -0.4713587901037817, 0.6560185829424987]
+        )
     }
 
     X_O = {"initial": RigidTransform(RotationMatrix(
