@@ -14,6 +14,8 @@ from pydrake.all import (
 from pydrake.geometry import (Cylinder, GeometryInstance,
                               MakePhongIllustrationProperties)
 
+import experimental_controller as e_c
+
 def AddTriad(source_id,
              frame_id,
              scene_graph,
@@ -266,7 +268,7 @@ def AddPositionConstraint(plant, ik, target_frame, p_BQ, p_NG_lower, p_NG_upper)
         p_AQ_lower=p_NG_lower, p_AQ_upper=p_NG_upper)
 
 
-def create_q_keyframes(timestamps, keyframe_poses, plant, station):
+def create_q_keyframes(timestamps, keyframe_poses, plant):
     """Convert end-effector pose list to joint position list using series of 
     InverseKinematics problems. Note that q is 9-dimensional because the last 2 dimensions 
     contain gripper joints, but these should not matter to the constraints.
@@ -286,7 +288,10 @@ def create_q_keyframes(timestamps, keyframe_poses, plant, station):
             q_keyframes.append(q_keyframes[-1])
             continue
 
-        q_nominal = np.array([0., -1.57, 0.1, 0, -1.2, 0, 1.6, 0, 0, 0])
+        #q_nominal = np.array([0., -1.57, 0.1, 0, -1.2, 0, 1.6, 0, 0, 0])
+        q_nominal = np.zeros(10,)
+        q_nominal[1:8] = e_c.IIWA_DEFAULT_POSITION
+
         # q_nominal = np.array([0., 0.,  1.51609774,  0., -0.78808917, 0.,  2.36662405,  0., 0., 0.]) # nominal joint for joint-centering.
         # q_nominal = np.array([0., 0., 0.6, 0., -1.75, 0., 1., 0., 0., 0.])
         #q_nominal = np.array([0., -1.56702176,  1.33784888, 0.00572793, -1.24946957, -0.002234, 2.05829444, 0.00836547, 0., 0.])
@@ -370,7 +375,7 @@ def create_q_keyframes(timestamps, keyframe_poses, plant, station):
     return np.array(valid_timestamps), np.array(q_keyframes)
 
 
-def create_open_loop_controller(builder, plant, station, scene_graph, X_G, X_O, draw_frames):
+def create_open_loop_controller(builder, plant, scene_graph, X_G, X_O, draw_frames):
     # 1) hardcode pivotal poses
     # 2) pivotal transforms are used to interpolate a few `keyframe_poses`
     # 3) ik is solved over `keyframe_poses`.
@@ -387,7 +392,7 @@ def create_open_loop_controller(builder, plant, station, scene_graph, X_G, X_O, 
                      scene_graph, name=triad_name, length=0.1, radius=0.004, opacity=0.5,
                     X_FT=keyframe_poses[-1])
     print('keyframe_poses: ', len(keyframe_poses))
-    valid_timestamps, q_keyframes = create_q_keyframes(timestamps, keyframe_poses, plant, station)
+    valid_timestamps, q_keyframes = create_q_keyframes(timestamps, keyframe_poses, plant)
     assert len(valid_timestamps) > 0
     q_trajectory = PiecewisePolynomial.CubicShapePreserving(valid_timestamps, q_keyframes[:, 1:8].T)
     q_trajectory_system = builder.AddSystem(TrajectorySource(q_trajectory))
