@@ -43,6 +43,8 @@ def AddMeshcatTriad(
     meshcat.SetObject(
         path + "/z-axis", Cylinder(radius, length), Rgba(0, 0, 1, opacity)
     )
+
+
 def make_gripper_frames(X_G, X_O):
     """
     Takes a partial specification with X_G["initial"] and X_O["initial"] and X_0["goal"], and 
@@ -54,10 +56,10 @@ def make_gripper_frames(X_G, X_O):
     assert 'goal' in X_O
     # Define (again) the gripper pose relative to the object when in grasp.
     
-    #p_GgraspO = [0., 0.07, 0.0] # I want to achieve this version
-    p_GgraspO = [0., 0.20, 0.07] # which of these to use depends on gravity
+    p_GgraspO = [0., 0.07, 0.09] # I want to achieve this version
+    #p_GgraspO = [0., 0.20, 0.07] # which of these to use depends on gravity
     
-    R_GgraspO = RotationMatrix.Identity() # #RotationMatrix.Identity() #MakeZRotation(-np.pi/2.0)
+    R_GgraspO = RotationMatrix.MakeZRotation(-np.pi/2.0) # #RotationMatrix.Identity() #MakeZRotation(-np.pi/2.0)
     X_GgraspO = RigidTransform(R_GgraspO, p_GgraspO)
     
     X_OGgrasp = X_GgraspO.inverse()
@@ -114,7 +116,7 @@ def AddIiwaDifferentialIK(builder, plant, frame=None):
         iiwa14_velocity_limits = np.array([1.4, 1.4, 1.7, 1.3, 2.2, 2.3, 2.3])
         params.set_joint_velocity_limits(
             (-iiwa14_velocity_limits, iiwa14_velocity_limits))
-        params.set_joint_centering_gain(10 * np.eye(7))
+        params.set_joint_centering_gain(1 * np.eye(7)) # 10
     if frame is None:
         frame = plant.GetFrameByName("body")
     differential_ik = builder.AddSystem(
@@ -203,7 +205,8 @@ class PickAndPlaceTrajectory(LeafSystem):
                 self._traj_wsg_index)).get_value().value(context.get_time()))
 
 
-def add_new_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat):
+def add_new_differential_controller(builder, plant, measured_iiwa_state_port,
+                                    iiwa_pid_controller, meshcat):
     plan = builder.AddSystem(PickAndPlaceTrajectory(plant, meshcat))
     builder.Connect(plant.get_body_poses_output_port(),
                     plan.GetInputPort("body_poses"))

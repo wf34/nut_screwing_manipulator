@@ -40,7 +40,9 @@ DIFF_IK = 'differential'
 DIFF2_IK = 'differential2'
 OPEN_IK = 'open_loop'
 
-TIME_STEP=0.001
+TIME_STEP=0.0001 #finer
+TIME_STEP=0.001  #orig
+TIME_STEP=0.007  #faster
 
 def get_manipuland_resource_path():
     #manifest = runfiles.Create()
@@ -196,30 +198,30 @@ def build_scene(meshcat, controller_type, log_destination):
     if body_frames_visualization:
         display_bodies_frames(plant, scene_graph)
 
-    X_G = {"initial":
-       RigidTransform(
-        R=RotationMatrix([
-            [0.9999996829318348, 0.00019052063137842194, -0.0007731999219133522],
-            [0.0007963267107334455, -0.23924925335563643, 0.9709578572896668],
-            [1.868506971441006e-16, -0.9709581651495911, -0.23924932921398248],
-          ]),
-          p=[0.0003753557139120804, -0.4713587901037817, 0.6560185829424987]
-        )
-    }
+    #X_G = {"initial":
+    #   RigidTransform(
+    #    R=RotationMatrix([
+    #        [0.9999996829318348, 0.00019052063137842194, -0.0007731999219133522],
+    #        [0.0007963267107334455, -0.23924925335563643, 0.9709578572896668],
+    #        [1.868506971441006e-16, -0.9709581651495911, -0.23924932921398248],
+    #      ]),
+    #      p=[0.0003753557139120804, -0.4713587901037817, 0.6560185829424987]
+    #    )
+    #}
 
-    X_O = {"initial": RigidTransform(RotationMatrix(
-        [[1.0, 0.0, 0.0],
-         [0.0, 1.0, 0.0],
-         [0.0, 0.0, 1.0]]),
-         [0.0, -0.3, 0.1])}
+    #X_O = {"initial": RigidTransform(RotationMatrix(
+    #    [[1.0, 0.0, 0.0],
+    #     [0.0, 1.0, 0.0],
+    #     [0.0, 0.0, 1.0]]),
+    #     [0.0, -0.3, 0.1])}
 
     #X_O = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("nut"))}
     
-    X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
-    X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
-    X_G, times = diff2_c.make_gripper_frames(X_G, X_O)
-    print('prepick at {}; pick_start at {}, ends at {}.'.format(
-        times['prepick'], times['pick_start'], times['pick_end']))
+    #X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
+    #X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
+    #X_G, times = diff2_c.make_gripper_frames(X_G, X_O)
+    #print('prepick at {}; pick_start at {}, ends at {}.'.format(
+    #    times['prepick'], times['pick_start'], times['pick_end']))
 
     measured_iiwa_position_port, iiwa_pid_controller, measured_iiwa_state_port = \
         create_iiwa_position_measured_port(
@@ -306,8 +308,9 @@ def simulate_nut_screwing(controller_type, log_destination):
         return
 
     visualizer.StartRecording(False)
-    simulator.AdvanceTo(30)
+    simulator.AdvanceTo(40)
     visualizer.PublishRecording()
+    time.sleep(30)
 
 
 def parse_args():
