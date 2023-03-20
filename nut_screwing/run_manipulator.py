@@ -23,12 +23,13 @@ from pydrake.all import (
     ContactVisualizer, ContactVisualizerParams,
     StateInterpolatorWithDiscreteDerivative,
     SchunkWsgPositionController,
-    MakeMultibodyStateToWsgStateSystem
+    MakeMultibodyStateToWsgStateSystem,
 )
 from pydrake.multibody.parsing import Parser
 
 import sim_helper as sh
 import differential_controller as diff_c
+import new_differential_controller as diff2_c
 import open_loop_controller as ol_c
 import experimental_controller as e_c
 import state_monitor as sm
@@ -36,6 +37,7 @@ import run_alt_manipulator as ram
 
 EXPERIMENTAL = 'experimental'
 DIFF_IK = 'differential'
+DIFF2_IK = 'differential2'
 OPEN_IK = 'open_loop'
 
 TIME_STEP=0.001
@@ -84,63 +86,7 @@ def AddExternallyAppliedSpatialForce(builder, station):
     return force_system
 
 
-def make_gripper_frames(X_G, X_O):
-    """
-    Takes a partial specification with X_G["initial"] and X_O["initial"] and X_0["goal"], and 
-    returns a X_G and times with all of the pick and place frames populated.
-    """
 
-    assert 'initial' in X_G
-    assert 'initial' in X_O
-    assert 'goal' in X_O
-    # Define (again) the gripper pose relative to the object when in grasp.
-    
-    #p_GgraspO = [0., 0.07, 0.0] # I want to achieve this version
-    p_GgraspO = [0., 0.20, 0.07] # which of these to use depends on gravity
-    
-    R_GgraspO = RotationMatrix.Identity() # #RotationMatrix.Identity() #MakeZRotation(-np.pi/2.0)
-    X_GgraspO = RigidTransform(R_GgraspO, p_GgraspO)
-    
-    X_OGgrasp = X_GgraspO.inverse()
-
-    # pregrasp is negative y in the gripper frame (see the figure!).
-    X_GgraspGpregrasp = RigidTransform([0, -0.15, 0.0])
-
-    X_G["pick"] = X_O["initial"].multiply(X_OGgrasp)
-    X_G["prepick"] = X_G["pick"].multiply(X_GgraspGpregrasp)
-
-    X_G["place"] = X_O["goal"].multiply(X_OGgrasp)
-    X_G["postplace"] = X_G["place"].multiply(X_GgraspGpregrasp)
-    
-
-    # I'll interpolate a halfway orientation by converting to axis angle and halving the angle.
-    X_GpickGplace = X_G["pick"].inverse().multiply(X_G["place"])
-
-
-    # Now let's set the timing
-    times = {"initial": 0}
-      
-    X_GinitialGprepick = X_G["initial"].inverse().multiply(X_G["prepick"])
-    times["prepick"] = times["initial"] + 10.0 #*np.linalg.norm(X_GinitialGprepick.translation())
-
-    # Allow some time for the gripper to close.
-    times["pick_start"] = times["prepick"] + 5
-    X_G["pick_start"] = X_G["pick"]
-    
-    times["pick_end"] = times["pick_start"] + 2.0
-    X_G["pick_end"] = X_G["pick"]
-
-    time_to_rotate = 2.+10.0*np.linalg.norm(X_GpickGplace.rotation().matrix()) 
-      
-    times["place_start"] = times["pick_end"] + time_to_rotate + 2.0
-    X_G["place_start"] = X_G["place"]
-      
-    times["place_end"] = times["place_start"] + 4.0
-    X_G["place_end"] = X_G["place"]
-
-    times["postplace"] = times["place_end"] + 4.0
-
-    return X_G, times
 
 
 def AddContactsSystem(builder, plant, meshcat):
@@ -187,7 +133,7 @@ def create_iiwa_position_measured_port(builder, plant, iiwa):
     builder.Connect(adder.get_output_port(),
                     plant.get_actuation_input_port(iiwa))
 
-    return demux.get_output_port(0), iiwa_controller
+    return demux.get_output_port(0), iiwa_controller, iiwa_output_state
 
 
 def create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller):
@@ -271,11 +217,12 @@ def build_scene(meshcat, controller_type, log_destination):
     
     X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
     X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
-    X_G, times = make_gripper_frames(X_G, X_O)
+    X_G, times = diff2_c.make_gripper_frames(X_G, X_O)
     print('prepick at {}; pick_start at {}, ends at {}.'.format(
         times['prepick'], times['pick_start'], times['pick_end']))
 
-    measured_iiwa_position_port, iiwa_pid_controller = create_iiwa_position_measured_port(
+    measured_iiwa_position_port, iiwa_pid_controller, measured_iiwa_state_port = \
+        create_iiwa_position_measured_port(
             builder, plant, iiwa)
     desired_iiwa_position_port = create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller)
     desired_wsg_position_port = create_wsg_position_desired_port(builder, plant, wsg)
@@ -285,6 +232,10 @@ def build_scene(meshcat, controller_type, log_destination):
              diff_c.create_differential_controller(builder, plant,
                                                    measured_iiwa_position_port,
                                                    X_G, times)
+    elif DIFF2_IK == controller_type:
+        integrator = None
+        output_iiwa_position_port, output_wsg_position_port = \
+            diff2_c.add_new_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat)
     elif OPEN_IK == controller_type:
         integrator = None
         draw_frames = True
@@ -361,7 +312,7 @@ def simulate_nut_screwing(controller_type, log_destination):
 
 def parse_args():
     parser = argparse.ArgumentParser(description=sys.argv[0])
-    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, OPEN_IK, EXPERIMENTAL], help='what controls manipulator')
+    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, DIFF2_IK, OPEN_IK, EXPERIMENTAL], help='what controls manipulator')
     parser.add_argument('-l', '--log_destination', default='', help='where to put telemetry')
     return vars(parser.parse_args())
 
