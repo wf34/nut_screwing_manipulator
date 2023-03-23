@@ -177,10 +177,7 @@ def build_scene(meshcat, controller_type, log_destination):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=TIME_STEP)
     iiwa = ram.AddIiwa(plant, collision_model="with_box_collision")
-    wsg = ram.AddWsg(plant, iiwa, welded=False, sphere=True)
-
-    #station.SetupManipulationClassStation()  # .SetupNutStation()
-    #plant = station.get_multibody_plant()
+    wsg = ram.AddWsg(plant, iiwa, welded=False, sphere=False)
 
     bolt_with_nut = add_manipuland(plant)
     zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
@@ -304,7 +301,6 @@ def simulate_nut_screwing(controller_type, log_destination):
     os.system(f'xdg-open {web_url}')
 
     if not simulator:
-        os.sleep(5.)
         return
 
     visualizer.StartRecording(False)
