@@ -1,3 +1,4 @@
+import argparse
 import time
 import os
 import sys
@@ -8,10 +9,18 @@ from pydrake.all import (AddMultibodyPlantSceneGraph, BsplineTrajectory,
                          MeshcatVisualizer, MeshcatVisualizerParams,
                          MinimumDistanceConstraint, Parser, PositionConstraint,
                          Rgba, RigidTransform, Role, Solve, Sphere,
-                         StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath, MeshcatCone)
-
+                         StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath, MeshcatCone,
+                         ConstantVectorSource)
 from experimental_controller import IIWA_DEFAULT_POSITION
 import sim_helper as sh
+
+import run_manipulator as rm
+
+SHELVES = 'shelves'
+BINS = 'bins'
+SCREWING = 'screwing'
+SCENARIOS = [SHELVES, BINS, SCREWING]
+
 def FindResource(filename):
     return os.path.join(os.path.dirname(__file__), filename)
 
@@ -361,7 +370,124 @@ def trajopt_bins_demo(meshcat):
         collision_visualizer.GetMyContextFromRoot(context))
 
 
-if '__main__' == __name__:
+def parse_args():
+    parser = argparse.ArgumentParser(description=sys.argv[0])
+    parser.add_argument('-s', '--scenario', default=SCREWING, choices=SCENARIOS, help='which scene is modeled')
+    return vars(parser.parse_args())
+
+
+def trajopt_screwing_demo(meshcat):
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
+    iiwa = AddIiwa(plant, collision_model="with_box_collision")
+    wsg = AddWsg(plant, iiwa, welded=False, sphere=False)
+
+    bolt_with_nut = rm.add_manipuland(plant)
+    zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
+    plant.Finalize()
+
+    visualizer = MeshcatVisualizer.AddToBuilder(
+        builder, scene_graph, meshcat,
+        MeshcatVisualizerParams(role=Role.kIllustration))
+    collision_visualizer = MeshcatVisualizer.AddToBuilder(
+        builder, scene_graph, meshcat,
+        MeshcatVisualizerParams(prefix="collision", role=Role.kProximity))
+    meshcat.SetProperty("collision", "visible", False)
+
+    diagram = builder.Build()
+    diagram.set_name("nut_screwing")
+
+    context = diagram.CreateDefaultContext()
+    plant_context = plant.GetMyContextFromRoot(context)
+
+    rm.set_iiwa_default_position(plant)
+
+    num_q = plant.num_positions()
+    num_c = 10
+    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
+
+    q0 = plant.GetPositions(plant_context)
+    gripper_frame = plant.GetFrameByName("body", wsg)
+
+    trajopt = KinematicTrajectoryOptimization(plant.num_positions(), 20)
+    prog = trajopt.get_mutable_prog()
+
+    q_guess = np.tile(q0.reshape((7,1)), (1, trajopt.num_control_points()))
+    q_guess[0,:] = np.linspace(0, -np.pi/2, trajopt.num_control_points())
+    path_guess = BsplineTrajectory(trajopt.basis(), q_guess)
+    trajopt.SetInitialGuess(path_guess)
+
+    # Uncomment this to see the initial guess:
+    # PublishPositionTrajectory(path_guess, context, plant, visualizer)
+
+    trajopt.AddDurationCost(1.0)
+    trajopt.AddPathLengthCost(1.0)
+    trajopt.AddPositionBounds(plant.GetPositionLowerLimits(),
+                              plant.GetPositionUpperLimits())
+    trajopt.AddVelocityBounds(plant.GetVelocityLowerLimits(),
+                              plant.GetVelocityUpperLimits())
+
+    trajopt.AddDurationConstraint(5, 50)
+
+    # start constraint
+    start_constraint = PositionConstraint(plant, plant.world_frame(),
+                                          X_WStart.translation(),
+                                          X_WStart.translation(), gripper_frame,
+                                          [0, 0.1, 0], plant_context)
+    trajopt.AddPathPositionConstraint(start_constraint, 0)
+    prog.AddQuadraticErrorCost(np.eye(num_q), q0,
+                               trajopt.control_points()[:, 0])
+
+    # goal constraint
+    goal_constraint = PositionConstraint(plant, plant.world_frame(),
+                                         X_WGoal.translation(),
+                                         X_WGoal.translation(), gripper_frame,
+                                         [0, 0.1, 0], plant_context)
+    trajopt.AddPathPositionConstraint(goal_constraint, 1)
+    prog.AddQuadraticErrorCost(np.eye(num_q), q0,
+                               trajopt.control_points()[:, -1])
+
+    # start and end with zero velocity
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 0)
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 1)
+
+    # collision constraints
+    collision_constraint = MinimumDistanceConstraint(plant, 0.001,
+                                                     plant_context, None, 0.01)
+    evaluate_at_s = np.linspace(0, 1, 50)
+    for s in evaluate_at_s:
+        trajopt.AddPathPositionConstraint(collision_constraint, s)
+
+    result = Solve(prog)
+    if not result.is_success():
+        print("Trajectory optimization failed")
+        print(result.get_solver_id().name())
+    else:
+        print("Trajectory optimization succeeded")
+
+    print('break line to view animation:')
+    _ = sys.stdin.readline()
+    PublishPositionTrajectory(trajopt.ReconstructTrajectory(result), context,
+                              plant, visualizer)
+    collision_visualizer.ForcedPublish(
+        collision_visualizer.GetMyContextFromRoot(context))
+
+def run_alt_main(scenario):
     meshcat = sh.StartMeshcat()
-    #trajopt_bins_demo(meshcat)
-    trajopt_shelves_demo(meshcat)
+    web_url = meshcat.web_url()
+    print(f'Meshcat is now available at {web_url}')
+    os.system(f'xdg-open {web_url}')
+    if scenario == SHELVES:
+        trajopt_shelves_demo(meshcat)
+    elif scenario == BINS:
+        trajopt_bins_demo(meshcat)
+    elif scenario == SCREWING:
+        trajopt_screwing_demo(meshcat)
+    print('python sent to sleep')
+    time.sleep(30)
+
+
+if '__main__' == __name__:
+    run_alt_main(**parse_args())
