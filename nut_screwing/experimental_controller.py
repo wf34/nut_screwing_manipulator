@@ -12,8 +12,8 @@ from differential_controller import create_differential_controller_on_trajectory
 
 IIWA_DEFAULT_POSITION = [-1.57, 0.1, 0, -1.2, 0, 1.6, 0]
 
-def get_default_plant_position_with_inf(plant):
-    iiwa_model_instance = plant.GetModelInstanceByName('iiwa')
+def get_default_plant_position_with_inf(plant, model_name='iiwa'):
+    iiwa_model_instance = plant.GetModelInstanceByName(model_name)
     indices = list(map(int, plant.GetJointIndices(model_instance=iiwa_model_instance)))
     n = plant.num_positions()
     plant_0 = np.zeros(n)
@@ -58,13 +58,11 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
     num_c = 10
     print('num_positions: {}; num control points: {}'.format(num_q, num_c))
 
-    print('before c-tor')
     trajopt = KinematicTrajectoryOptimization(num_q, 10)
-    print('after c-tor')
     prog = trajopt.get_mutable_prog()
     trajopt.AddDurationCost(1.0)
     trajopt.AddPathLengthCost(1.0)
-    print('after first 2')
+
     #iiwa_position_limits_lower = plant.GetPositionLowerLimits()[2:9]
     #iiwa_position_limits_upper = plant.GetPositionUpperLimits()[2:9]
 
@@ -80,14 +78,11 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
     #    print(f.__name__, rez, len(rez))
 
     trajopt.AddPositionBounds(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits())
-    print('after first 3')
 
     plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
     plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0)
-    print(plant_v_lower_limits, plant_v_upper_limits)
 
     trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
-    print('after first 4')
     trajopt.AddDurationConstraint(.5, 5)
 
     X_WStart = X_G['initial']
