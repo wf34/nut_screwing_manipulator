@@ -476,10 +476,10 @@ def trajopt_screwing_demo(meshcat):
     q0, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
 
     num_q = plant.num_positions()
-    num_c = 10
+    num_c = 12
     print('num_positions: {}; num control points: {}'.format(num_q, num_c))
 
-    trajopt = KinematicTrajectoryOptimization(num_q, 10)
+    trajopt = KinematicTrajectoryOptimization(num_q, num_c)
     prog = trajopt.get_mutable_prog()
     trajopt.AddDurationCost(1.0)
     trajopt.AddPathLengthCost(1.0)
@@ -492,7 +492,7 @@ def trajopt_screwing_demo(meshcat):
 
     trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
 
-    trajopt.AddDurationConstraint(3, 10)
+    trajopt.AddDurationConstraint(10, 25)
 
     gripper_body_index = int(plant.GetBodyByName("body").index())
     nut_body_index = int(plant.GetBodyByName("nut").index())
@@ -517,11 +517,12 @@ def trajopt_screwing_demo(meshcat):
     plant_context = plant.GetMyContextFromRoot(context)
 
     # start constraint
-    start_constraint = PositionConstraint(plant, plant.world_frame(),
+    start_constraint = PositionConstraint(plant,
+                                          plant.world_frame(),
                                           X_WStart.translation(),
                                           X_WStart.translation(),
                                           gripper_frame,
-                                          [0, 0.1, 0],
+                                          [0, 0.0, 0],
                                           plant_context)
     trajopt.AddPathPositionConstraint(start_constraint, 0)
     prog.AddQuadraticErrorCost(inf0, q0,
@@ -529,11 +530,21 @@ def trajopt_screwing_demo(meshcat):
 
     # goal constraint
     goal_constraint = PositionConstraint(plant, plant.world_frame(),
-                                         X_WGoal.translation(),
-                                         X_WGoal.translation(),
+                                         X_WGoal.translation() - [.03]*3,
+                                         X_WGoal.translation() + [.03]*3,
                                          gripper_frame,
-                                         [0, 0.1, 0],
+                                         [0, 0., 0],
                                          plant_context)
+    # print('its inv:', np.degrees(X_WGoal.rotation().inverse().ToRollPitchYaw().vector()))
+    goal_orientation_constraint = OrientationConstraint(plant,
+                                                        gripper_frame,
+                                                        X_WGoal.rotation().inverse(),
+                                                        #RotationMatrix(X_WGoal.rotation().matrix() * RotationMatrix.MakeZRotation(np.pi).matrix()),
+                                                        plant.world_frame(),
+                                                        RotationMatrix(),
+                                                        np.radians(5),
+                                                        plant_context)
+    trajopt.AddPathPositionConstraint(goal_orientation_constraint, 1)
     trajopt.AddPathPositionConstraint(goal_constraint, 1)
     prog.AddQuadraticErrorCost(inf0, q0,
                                trajopt.control_points()[:, -1])
