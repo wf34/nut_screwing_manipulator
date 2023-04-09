@@ -206,12 +206,12 @@ class PickAndPlaceTrajectory(LeafSystem):
 
 
 def add_new_differential_controller(builder, plant, measured_iiwa_state_port,
-                                    iiwa_pid_controller, meshcat, robot):
+                                    iiwa_pid_controller, meshcat):
     plan = builder.AddSystem(PickAndPlaceTrajectory(plant, meshcat))
     builder.Connect(plant.get_body_poses_output_port(),
                     plan.GetInputPort("body_poses"))
 
-    #robot = iiwa_pid_controller.get_multibody_plant_for_control()
+    robot = iiwa_pid_controller.get_multibody_plant_for_control()
 
     # Set up differential inverse kinematics.
     diff_ik = AddIiwaDifferentialIK(builder, robot)

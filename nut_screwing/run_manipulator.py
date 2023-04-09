@@ -24,7 +24,6 @@ from pydrake.all import (
     StateInterpolatorWithDiscreteDerivative,
     SchunkWsgPositionController,
     MakeMultibodyStateToWsgStateSystem,
-    JointStiffnessController
 )
 from pydrake.multibody.parsing import Parser
 
@@ -116,18 +115,18 @@ def create_iiwa_position_measured_port(builder, plant, iiwa):
     ram.AddWsg(controller_plant, controller_iiwa, welded=True, sphere=True)
     controller_plant.Finalize()
 
-    kp = 700 * np.ones((num_iiwa_positions,))
-    kd =  np.ones((num_iiwa_positions,))
-
-    print('num_iiwa_positions', num_iiwa_positions, controller_plant.num_positions(), plant.num_positions(), kp.size, kd.size)
     iiwa_controller = builder.AddSystem(
-                JointStiffnessController(plant=controller_plant, kp=kp, kd=kd))
+                InverseDynamicsController(controller_plant,
+                                          kp=[100] * num_iiwa_positions,
+                                          ki=[1] * num_iiwa_positions,
+                                          kd=[20] * num_iiwa_positions,
+                                          has_reference_acceleration=False))
     iiwa_controller.set_name("iiwa_controller")
     builder.Connect(plant.get_state_output_port(iiwa),
                     iiwa_controller.get_input_port_estimated_state())
 
     adder = builder.AddSystem(Adder(2, num_iiwa_positions))
-    builder.Connect(iiwa_controller.get_output_port_generalized_force(),
+    builder.Connect(iiwa_controller.get_output_port_control(),
                     adder.get_input_port(0))
     torque_passthrough = builder.AddSystem(PassThrough([0] * num_iiwa_positions))
     builder.Connect(torque_passthrough.get_output_port(),
@@ -136,7 +135,7 @@ def create_iiwa_position_measured_port(builder, plant, iiwa):
     builder.Connect(adder.get_output_port(),
                     plant.get_actuation_input_port(iiwa))
 
-    return demux.get_output_port(0), iiwa_controller, iiwa_output_state, controller_plant
+    return demux.get_output_port(0), iiwa_controller, iiwa_output_state
 
 
 def create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller):
@@ -221,7 +220,7 @@ def build_scene(meshcat, controller_type, log_destination):
     #print('prepick at {}; pick_start at {}, ends at {}.'.format(
     #    times['prepick'], times['pick_start'], times['pick_end']))
 
-    measured_iiwa_position_port, iiwa_pid_controller, measured_iiwa_state_port, controller_plant = \
+    measured_iiwa_position_port, iiwa_pid_controller, measured_iiwa_state_port = \
         create_iiwa_position_measured_port(
             builder, plant, iiwa)
     desired_iiwa_position_port = create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller)
@@ -235,7 +234,7 @@ def build_scene(meshcat, controller_type, log_destination):
     elif DIFF2_IK == controller_type:
         integrator = None
         output_iiwa_position_port, output_wsg_position_port = \
-            diff2_c.add_new_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat, controller_plant)
+            diff2_c.add_new_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat)
     elif OPEN_IK == controller_type:
         integrator = None
         draw_frames = True
