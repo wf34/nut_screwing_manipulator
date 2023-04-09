@@ -5,13 +5,16 @@ import sys
 
 import numpy as np
 from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
-from pydrake.all import (AddMultibodyPlantSceneGraph, BsplineTrajectory,
+from pydrake.all import (AddMultibodyPlantSceneGraph, BsplineTrajectory, GeometryInstance,
                          DiagramBuilder, KinematicTrajectoryOptimization,
                          MeshcatVisualizer, MeshcatVisualizerParams,
-                         MinimumDistanceConstraint, Parser, PositionConstraint,
+                         MinimumDistanceConstraint, Parser, PositionConstraint, OrientationConstraint,
                          Rgba, RigidTransform, Role, Solve, Sphere,
                          StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath, MeshcatCone,
                          ConstantVectorSource)
+from pydrake.geometry import (Cylinder, GeometryInstance,
+                              MakePhongIllustrationProperties)
+
 from experimental_controller import IIWA_DEFAULT_POSITION
 import sim_helper as sh
 
@@ -21,11 +24,75 @@ from experimental_controller import get_default_plant_position_with_inf
 
 SHELVES = 'shelves'
 BINS = 'bins'
-SCREWING = 'screwing'
-SCENARIOS = [SHELVES, BINS, SCREWING]
+TRAJOPT_SCREWING = 'trajopt_screwing'
+GIK_SCREWING = 'gik_screwing'
+SCENARIOS = [SHELVES, BINS, TRAJOPT_SCREWING, GIK_SCREWING]
+
+def AddTriad(source_id,
+             frame_id,
+             scene_graph,
+             length=.25,
+             radius=0.01,
+             opacity=1.,
+             X_FT=RigidTransform(),
+             name="frame"):
+    """
+    Adds illustration geometry representing the coordinate frame, with the
+    x-axis drawn in red, the y-axis in green and the z-axis in blue. The axes
+    point in +x, +y and +z directions, respectively.
+
+    Args:
+      source_id: The source registered with SceneGraph.
+      frame_id: A geometry::frame_id registered with scene_graph.
+      scene_graph: The SceneGraph with which we will register the geometry.
+      length: the length of each axis in meters.
+      radius: the radius of each axis in meters.
+      opacity: the opacity of the coordinate axes, between 0 and 1.
+      X_FT: a RigidTransform from the triad frame T to the frame_id frame F
+      name: the added geometry will have names name + " x-axis", etc.
+    """
+    # x-axis
+    X_TG = RigidTransform(RotationMatrix.MakeYRotation(np.pi / 2),
+                          [length / 2., 0, 0])
+    geom = GeometryInstance(X_FT.multiply(X_TG), Cylinder(radius, length),
+                            name + " x-axis")
+    geom.set_illustration_properties(
+        MakePhongIllustrationProperties([1, 0, 0, opacity]))
+    scene_graph.RegisterGeometry(source_id, frame_id, geom)
+
+    # y-axis
+    X_TG = RigidTransform(RotationMatrix.MakeXRotation(np.pi / 2),
+                          [0, length / 2., 0])
+    geom = GeometryInstance(X_FT.multiply(X_TG), Cylinder(radius, length),
+                            name + " y-axis")
+    geom.set_illustration_properties(
+        MakePhongIllustrationProperties([0, 1, 0, opacity]))
+    scene_graph.RegisterGeometry(source_id, frame_id, geom)
+
+    # z-axis
+    X_TG = RigidTransform([0, 0, length / 2.])
+    geom = GeometryInstance(X_FT.multiply(X_TG), Cylinder(radius, length),
+                            name + " z-axis")
+    geom.set_illustration_properties(
+        MakePhongIllustrationProperties([0, 0, 1, opacity]))
+    scene_graph.RegisterGeometry(source_id, frame_id, geom)
+
+
+def AddMultibodyTriad(frame, scene_graph, length=.25, radius=0.01, opacity=1.):
+    plant = frame.GetParentPlant()
+    AddTriad(plant.get_source_id(),
+             plant.GetBodyFrameIdOrThrow(frame.body().index()), scene_graph,
+             length, radius, opacity, frame.GetFixedPoseInBodyFrame())
+
+
+def display_bodies_frames(plant, scene_graph):
+    for body_name in ["body", "nut"]:
+        AddMultibodyTriad(plant.GetFrameByName(body_name), scene_graph)
+
 
 def FindResource(filename):
     return os.path.join(os.path.dirname(__file__), filename)
+
 
 # TODO: take argument for whether we want the welded fingers version or not
 def AddWsg(plant,
@@ -388,6 +455,8 @@ def trajopt_screwing_demo(meshcat):
     bolt_with_nut = rm.add_manipuland(plant)
     zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
     plant.Finalize()
+
+    display_bodies_frames(plant, scene_graph)
 
     visualizer = MeshcatVisualizer.AddToBuilder(
         builder, scene_graph, meshcat,
