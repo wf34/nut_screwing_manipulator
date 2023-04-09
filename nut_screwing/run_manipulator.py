@@ -184,47 +184,26 @@ def build_scene(meshcat, controller_type, log_destination):
 
     plant.Finalize()
     # AddContactsSystem(builder, plant, meshcat)
+    # display_bodies_frames(plant, scene_graph)
 
     nut_input_port = plant.get_actuation_input_port(model_instance=bolt_with_nut)
     iiwa_actuation_input_port = plant.get_actuation_input_port(model_instance=iiwa)
 
     set_iiwa_default_position(plant)
-    body_frames_visualization = False
-
-    
-    if body_frames_visualization:
-        display_bodies_frames(plant, scene_graph)
-
-    #X_G = {"initial":
-    #   RigidTransform(
-    #    R=RotationMatrix([
-    #        [0.9999996829318348, 0.00019052063137842194, -0.0007731999219133522],
-    #        [0.0007963267107334455, -0.23924925335563643, 0.9709578572896668],
-    #        [1.868506971441006e-16, -0.9709581651495911, -0.23924932921398248],
-    #      ]),
-    #      p=[0.0003753557139120804, -0.4713587901037817, 0.6560185829424987]
-    #    )
-    #}
-
-    #X_O = {"initial": RigidTransform(RotationMatrix(
-    #    [[1.0, 0.0, 0.0],
-    #     [0.0, 1.0, 0.0],
-    #     [0.0, 0.0, 1.0]]),
-    #     [0.0, -0.3, 0.1])}
-
-    #X_O = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("nut"))}
-    
-    #X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
-    #X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
-    #X_G, times = diff2_c.make_gripper_frames(X_G, X_O)
-    #print('prepick at {}; pick_start at {}, ends at {}.'.format(
-    #    times['prepick'], times['pick_start'], times['pick_end']))
 
     measured_iiwa_position_port, iiwa_pid_controller, measured_iiwa_state_port = \
         create_iiwa_position_measured_port(
             builder, plant, iiwa)
     desired_iiwa_position_port = create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller)
     desired_wsg_position_port = create_wsg_position_desired_port(builder, plant, wsg)
+
+    if controller_type in [DIFF_IK, OPEN_IK]:
+        temp_plant_context = plant.CreateDefaultContext()
+        X_G = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("body"))}
+        X_O = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("nut"))}
+        X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
+        X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
+        X_G, times = diff2_c.make_gripper_frames(X_G, X_O)
 
     if DIFF_IK == controller_type:
         output_iiwa_position_port, output_wsg_position_port, integrator = \
