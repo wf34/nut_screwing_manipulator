@@ -366,6 +366,9 @@ def create_q_keyframes(timestamps, keyframe_poses, plant):
             print('no sol for i={} ts={:.1f}'.format(keyframe_index, keyframe_timestamp))
             break
         else:
+            print(result, dir(result))
+            print(result.get_solver_details(), result.get_solver_id())
+
             print('kf #{} is ok at timestamp {:.1f}'.format(keyframe_index, keyframe_timestamp))
             q_keyframes.append(result.GetSolution(q_variables))
             valid_timestamps.append(keyframe_timestamp)
