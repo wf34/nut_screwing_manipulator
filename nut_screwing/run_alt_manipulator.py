@@ -442,7 +442,7 @@ def trajopt_bins_demo(meshcat):
 
 def parse_args():
     parser = argparse.ArgumentParser(description=sys.argv[0])
-    parser.add_argument('-s', '--scenario', default=SCREWING, choices=SCENARIOS, help='which scene is modeled')
+    parser.add_argument('-s', '--scenario', default=TRAJOPT_SCREWING, choices=SCENARIOS, help='which scene is modeled')
     return vars(parser.parse_args())
 
 
@@ -557,6 +557,63 @@ def trajopt_screwing_demo(meshcat):
         collision_visualizer.GetMyContextFromRoot(context))
 
 
+def create_q_keyframes(timestamps, keyframe_poses, plant):
+
+    for keyframe_index, (keyframe_timestamp, keyframe_pose) in enumerate(zip(timestamps, keyframe_poses)):
+        if 0 == keyframe_index:
+            prog.SetInitialGuess(q_variables, q_nominal)
+        else:
+            prog.SetInitialGuess(q_variables, q_keyframes[-1])
+
+def gik_screwing_demo(meshcat):
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
+    iiwa = AddIiwa(plant, collision_model="with_box_collision")
+    wsg = AddWsg(plant, iiwa, welded=False, sphere=False)
+
+    bolt_with_nut = rm.add_manipuland(plant)
+    zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
+    plant.Finalize()
+
+    visualizer = MeshcatVisualizer.AddToBuilder(
+        builder, scene_graph, meshcat,
+        MeshcatVisualizerParams(role=Role.kIllustration))
+    collision_visualizer = MeshcatVisualizer.AddToBuilder(
+        builder, scene_graph, meshcat,
+        MeshcatVisualizerParams(prefix="collision", role=Role.kProximity))
+    meshcat.SetProperty("collision", "visible", False)
+
+    diagram = builder.Build()
+    diagram.set_name("nut_screwing")
+
+    context = diagram.CreateDefaultContext()
+    plant_context = plant.GetMyContextFromRoot(context)
+
+    rm.set_iiwa_default_position(plant)
+    q0, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
+
+    num_q = plant.num_positions()
+    num_c = 10
+    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
+
+
+    valid_timestamps, q_keyframes = create_q_keyframes(timestamps, keyframe_poses, plant)
+    assert len(valid_timestamps) > 0
+    q_trajectory = PiecewisePolynomial.CubicShapePreserving(valid_timestamps, q_keyframes[:, 1:8].T)
+
+    result = Solve(prog)
+    if not result.is_success():
+        print("Trajectory optimization failed")
+        print(result.get_solver_id().name())
+    else:
+        print("Trajectory optimization succeeded")
+
+    PublishPositionTrajectory(trajopt.ReconstructTrajectory(result), context,
+                              plant, visualizer, meshcat)
+    collision_visualizer.ForcedPublish(
+        collision_visualizer.GetMyContextFromRoot(context))
+
+
 def run_alt_main(scenario):
     meshcat = sh.StartMeshcat()
     web_url = meshcat.web_url()
@@ -566,8 +623,10 @@ def run_alt_main(scenario):
         trajopt_shelves_demo(meshcat)
     elif scenario == BINS:
         trajopt_bins_demo(meshcat)
-    elif scenario == SCREWING:
+    elif scenario == TRAJOPT_SCREWING:
         trajopt_screwing_demo(meshcat)
+    elif scenario == GIK_SCREWING:
+        gik_screwing_demo(meshcat)
     print('python sent to sleep')
     time.sleep(30)
 
