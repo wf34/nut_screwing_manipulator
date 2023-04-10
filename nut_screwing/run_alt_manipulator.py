@@ -11,7 +11,7 @@ from pydrake.all import (AddMultibodyPlantSceneGraph, BsplineTrajectory, Geometr
                          MinimumDistanceConstraint, Parser, PositionConstraint, OrientationConstraint,
                          Rgba, RigidTransform, Role, Solve, Sphere,
                          StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath, MeshcatCone,
-                         ConstantVectorSource)
+                         ConstantVectorSource, StackedTrajectory)
 from pydrake.geometry import (Cylinder, GeometryInstance,
                               MakePhongIllustrationProperties)
 
@@ -25,8 +25,7 @@ from experimental_controller import get_default_plant_position_with_inf
 SHELVES = 'shelves'
 BINS = 'bins'
 TRAJOPT_SCREWING = 'trajopt_screwing'
-GIK_SCREWING = 'gik_screwing'
-SCENARIOS = [SHELVES, BINS, TRAJOPT_SCREWING, GIK_SCREWING]
+SCENARIOS = [SHELVES, BINS, TRAJOPT_SCREWING]
 
 def AddTriad(source_id,
              frame_id,
@@ -446,6 +445,79 @@ def parse_args():
     return vars(parser.parse_args())
 
 
+def constrain_position(plant, trajopt, X_WG, target_time, plant_context):
+    gripper_frame = plant.GetBodyByName("body").body_frame()
+    # goal constraint
+    goal_constraint = PositionConstraint(plant, plant.world_frame(),
+                                         X_WG.translation() - [.03]*3,
+                                         X_WG.translation() + [.03]*3,
+                                         gripper_frame,
+                                         [0, 0., 0.],
+                                         plant_context)
+    # print('its inv:', np.degrees(X_WGoal.rotation().inverse().ToRollPitchYaw().vector()))
+    goal_orientation_constraint = OrientationConstraint(plant,
+                                                        gripper_frame,
+                                                        X_WG.rotation().inverse(),
+                                                        plant.world_frame(),
+                                                        RotationMatrix(),
+                                                        np.radians(5),
+                                                        plant_context)
+    trajopt.AddPathPositionConstraint(goal_orientation_constraint, target_time)
+    trajopt.AddPathPositionConstraint(goal_constraint, target_time)
+
+
+def run_single_traj_opt(plant, X_WGStart, X_WGgoal, plant_context):
+    gripper_frame = plant.GetBodyByName("body").body_frame()
+    q0, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
+    num_q = plant.num_positions()
+    num_c = 12
+    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
+
+    trajopt = KinematicTrajectoryOptimization(num_q, num_c)
+    prog = trajopt.get_mutable_prog()
+    trajopt.AddDurationCost(1.0)
+    trajopt.AddPathLengthCost(1.0)
+
+    trajopt.AddPositionBounds(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits())
+
+    plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
+    plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0)
+    print(plant_v_lower_limits, plant_v_upper_limits)
+
+    trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
+
+    trajopt.AddDurationConstraint(5, 10)
+
+    # start constraint
+    start_constraint = PositionConstraint(plant,
+                                          plant.world_frame(),
+                                          X_WGStart.translation(),
+                                          X_WGStart.translation(),
+                                          gripper_frame,
+                                          [0, 0.0, 0],
+                                          plant_context)
+    trajopt.AddPathPositionConstraint(start_constraint, 0)
+    prog.AddQuadraticErrorCost(inf0, q0,
+                               trajopt.control_points()[:, 0])
+
+    constrain_position(plant, trajopt, X_WGgoal, 1, plant_context)
+    prog.AddQuadraticErrorCost(inf0, q0,
+                               trajopt.control_points()[:, -1])
+
+    # start and end with zero velocity
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 0)
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 1)
+
+    result = Solve(prog)
+    if not result.is_success():
+        print("Trajectory optimization failed")
+        print(result.get_solver_id().name())
+    else:
+        print("Trajectory optimization succeeded")
+        return trajopt.ReconstructTrajectory(result)
+
 def trajopt_screwing_demo(meshcat):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
@@ -473,156 +545,41 @@ def trajopt_screwing_demo(meshcat):
     plant_context = plant.GetMyContextFromRoot(context)
 
     rm.set_iiwa_default_position(plant)
-    q0, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
-
-    num_q = plant.num_positions()
-    num_c = 12
-    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
-
-    trajopt = KinematicTrajectoryOptimization(num_q, num_c)
-    prog = trajopt.get_mutable_prog()
-    trajopt.AddDurationCost(1.0)
-    trajopt.AddPathLengthCost(1.0)
-
-    trajopt.AddPositionBounds(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits())
-
-    plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
-    plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0)
-    print(plant_v_lower_limits, plant_v_upper_limits)
-
-    trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
-
-    trajopt.AddDurationConstraint(10, 25)
-
+    
     gripper_body_index = int(plant.GetBodyByName("body").index())
     nut_body_index = int(plant.GetBodyByName("nut").index())
-    X_G = {
-        "initial": plant.get_body_poses_output_port().Eval(plant_context)[gripper_body_index]
-        }
-    X_O = {
-        "initial": plant.get_body_poses_output_port().Eval(plant_context)[nut_body_index]
-        }
+    X_WBcurrent_getter = lambda body_index: plant.get_body_poses_output_port().Eval(plant_context)[body_index]
+    X_WGcurrent_getter = lambda _=None: X_WBcurrent_getter(gripper_body_index)
+
+    X_G = { "initial": X_WGcurrent_getter() }
+    X_O = { "initial": X_WBcurrent_getter(nut_body_index) }
 
     X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
     X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
     X_G, times = diff2_c.make_gripper_frames(X_G, X_O)
 
-    X_WStart = X_G['initial']
-    X_WGoal = X_G['prepick']
+    diff2_c.AddMeshcatTriad(meshcat, 'start', X_PT=X_G['initial'], opacity=0.2)
 
-    diff2_c.AddMeshcatTriad(meshcat, 'start', X_PT=X_WStart)
-    diff2_c.AddMeshcatTriad(meshcat, 'goal', X_PT=X_WGoal)
+    goal_frames = ['prepick', 'pick'] 
+    st = StackedTrajectory()
+    for goal in goal_frames:
+        X_WGStart = X_WGcurrent_getter()
+        X_WGgoal = X_G[goal]
+        diff2_c.AddMeshcatTriad(meshcat, 'goal_{}'.format(goal), X_PT=X_WGgoal, opacity=0.4)
 
-    gripper_frame = plant.GetBodyByName("body").body_frame()
-    plant_context = plant.GetMyContextFromRoot(context)
+        interm_traj = run_single_traj_opt(plant, X_WGStart, X_WGgoal, plant_context)
+        if not interm_traj:
+            return
+        #plant.SetPositions(plant_context, interm_traj.FinalValue())
+        st.Append(interm_traj)
+        print(st.FinalValue(), st.FinalValue().shape)
+        print('interm_traj {} {}'.format(interm_traj.start_time(), interm_traj.end_time()))
 
-    # start constraint
-    start_constraint = PositionConstraint(plant,
-                                          plant.world_frame(),
-                                          X_WStart.translation(),
-                                          X_WStart.translation(),
-                                          gripper_frame,
-                                          [0, 0.0, 0],
-                                          plant_context)
-    trajopt.AddPathPositionConstraint(start_constraint, 0)
-    prog.AddQuadraticErrorCost(inf0, q0,
-                               trajopt.control_points()[:, 0])
+    #PublishPositionTrajectory(st, context,
+    #                          plant, visualizer, meshcat)
+    #collision_visualizer.ForcedPublish(
+    #    collision_visualizer.GetMyContextFromRoot(context))
 
-    # goal constraint
-    goal_constraint = PositionConstraint(plant, plant.world_frame(),
-                                         X_WGoal.translation() - [.03]*3,
-                                         X_WGoal.translation() + [.03]*3,
-                                         gripper_frame,
-                                         [0, 0., 0],
-                                         plant_context)
-    # print('its inv:', np.degrees(X_WGoal.rotation().inverse().ToRollPitchYaw().vector()))
-    goal_orientation_constraint = OrientationConstraint(plant,
-                                                        gripper_frame,
-                                                        X_WGoal.rotation().inverse(),
-                                                        #RotationMatrix(X_WGoal.rotation().matrix() * RotationMatrix.MakeZRotation(np.pi).matrix()),
-                                                        plant.world_frame(),
-                                                        RotationMatrix(),
-                                                        np.radians(5),
-                                                        plant_context)
-    trajopt.AddPathPositionConstraint(goal_orientation_constraint, 1)
-    trajopt.AddPathPositionConstraint(goal_constraint, 1)
-    prog.AddQuadraticErrorCost(inf0, q0,
-                               trajopt.control_points()[:, -1])
-
-    # start and end with zero velocity
-    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
-        (num_q, 1)), 0)
-    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
-        (num_q, 1)), 1)
-
-    result = Solve(prog)
-    if not result.is_success():
-        print("Trajectory optimization failed")
-        print(result.get_solver_id().name())
-    else:
-        print("Trajectory optimization succeeded")
-
-    PublishPositionTrajectory(trajopt.ReconstructTrajectory(result), context,
-                              plant, visualizer, meshcat)
-    collision_visualizer.ForcedPublish(
-        collision_visualizer.GetMyContextFromRoot(context))
-
-
-def create_q_keyframes(timestamps, keyframe_poses, plant):
-
-    for keyframe_index, (keyframe_timestamp, keyframe_pose) in enumerate(zip(timestamps, keyframe_poses)):
-        if 0 == keyframe_index:
-            prog.SetInitialGuess(q_variables, q_nominal)
-        else:
-            prog.SetInitialGuess(q_variables, q_keyframes[-1])
-
-def gik_screwing_demo(meshcat):
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
-    iiwa = AddIiwa(plant, collision_model="with_box_collision")
-    wsg = AddWsg(plant, iiwa, welded=False, sphere=False)
-
-    bolt_with_nut = rm.add_manipuland(plant)
-    zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
-    plant.Finalize()
-
-    visualizer = MeshcatVisualizer.AddToBuilder(
-        builder, scene_graph, meshcat,
-        MeshcatVisualizerParams(role=Role.kIllustration))
-    collision_visualizer = MeshcatVisualizer.AddToBuilder(
-        builder, scene_graph, meshcat,
-        MeshcatVisualizerParams(prefix="collision", role=Role.kProximity))
-    meshcat.SetProperty("collision", "visible", False)
-
-    diagram = builder.Build()
-    diagram.set_name("nut_screwing")
-
-    context = diagram.CreateDefaultContext()
-    plant_context = plant.GetMyContextFromRoot(context)
-
-    rm.set_iiwa_default_position(plant)
-    q0, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
-
-    num_q = plant.num_positions()
-    num_c = 10
-    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
-
-
-    valid_timestamps, q_keyframes = create_q_keyframes(timestamps, keyframe_poses, plant)
-    assert len(valid_timestamps) > 0
-    q_trajectory = PiecewisePolynomial.CubicShapePreserving(valid_timestamps, q_keyframes[:, 1:8].T)
-
-    result = Solve(prog)
-    if not result.is_success():
-        print("Trajectory optimization failed")
-        print(result.get_solver_id().name())
-    else:
-        print("Trajectory optimization succeeded")
-
-    PublishPositionTrajectory(trajopt.ReconstructTrajectory(result), context,
-                              plant, visualizer, meshcat)
-    collision_visualizer.ForcedPublish(
-        collision_visualizer.GetMyContextFromRoot(context))
 
 
 def run_alt_main(scenario):
@@ -636,8 +593,6 @@ def run_alt_main(scenario):
         trajopt_bins_demo(meshcat)
     elif scenario == TRAJOPT_SCREWING:
         trajopt_screwing_demo(meshcat)
-    elif scenario == GIK_SCREWING:
-        gik_screwing_demo(meshcat)
     print('python sent to sleep')
     time.sleep(30)
 
