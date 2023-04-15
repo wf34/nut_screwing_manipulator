@@ -1,4 +1,6 @@
 import argparse
+import functools
+import itertools
 import time
 import os
 import sys
@@ -161,6 +163,26 @@ def AddPlanarIiwa(plant):
 
     return iiwa
 
+
+def AddMeshactProgressSphere(meshcat, current_time, total_duration, plant, root_context):
+    plant_context = plant.GetMyContextFromRoot(root_context)
+
+    blue = np.array([0., 0., 1., 1.])
+    green = np.array([0., 1., 0., 1.])
+
+    a = current_time / total_duration
+    assert 0. <= a and a <= 1.
+    b = 1. - a
+    mixture = a * blue + b * green
+
+    root_context.SetTime(current_time)
+
+    X_W_G = plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body"))
+    curr_point = 'point_{}'.format(current_time)
+    meshcat.SetObject(curr_point, Sphere(0.01), rgba=Rgba(*mixture.tolist()))
+    meshcat.SetTransform(curr_point, X_W_G)
+
+
 def PublishPositionTrajectory(trajectory,
                               root_context,
                               plant,
@@ -175,8 +197,6 @@ def PublishPositionTrajectory(trajectory,
     visualizer_context = visualizer.GetMyContextFromRoot(root_context)
 
     visualizer.StartRecording(False)
-    blue = np.array([0., 0., 1., 1.])
-    green = np.array([0., 1., 0., 1.])
 
     dur = trajectory.end_time()  - trajectory.start_time()
     for t in np.append(
@@ -184,20 +204,46 @@ def PublishPositionTrajectory(trajectory,
                       time_step), trajectory.end_time()):
         plant.SetPositions(plant_context, trajectory.value(t))
         if meshcat:
-            a = t / dur
-            assert 0. <= a and a <= 1.
-            b = 1. - a
-            mixture = a * blue + b * green
-            root_context.SetTime(t)
-            X_W_G = plant.EvalBodyPoseInWorld(plant_context, plant.GetBodyByName("body"))
-            curr_point = 'point_{}'.format(t)
-            meshcat.SetObject(curr_point, Sphere(0.01), rgba=Rgba(*mixture.tolist()))
-            meshcat.SetTransform(curr_point, X_W_G)
-
+            AddMeshactProgressSphere(meshcat, t, dur, plant, root_context)
         visualizer.ForcedPublish(visualizer_context)
 
     visualizer.StopRecording()
     visualizer.PublishRecording()
+
+
+def PublishStackOfPositionTrajectores(trajectories,
+                                      root_context,
+                                      plant,
+                                      visualizer,
+                                      meshcat=None,
+                                      time_step=1.0 / 33.0):
+    plant_context = plant.GetMyContextFromRoot(root_context)
+    visualizer_context = visualizer.GetMyContextFromRoot(root_context)
+    visualizer.StartRecording(False)
+
+    ends = list(itertools.accumulate(map(lambda x: x.end_time(), trajectories)))
+    overall_length = functools.reduce(lambda x, y: x + y, ends, 0)
+    ends = [0.] + ends[:-1]
+
+    current_traj_index = 0
+    for t in np.append(np.arange(0., overall_length, time_step), overall_length):
+        current_time = t - ends[current_traj_index]
+        if current_time > trajectories[current_traj_index].end_time():
+            current_traj_index += 1
+
+        if current_traj_index == len(trajectories):
+            visualizer.ForcedPublish(visualizer_context)
+            break
+
+        trajectory = trajectories[current_traj_index]
+        plant.SetPositions(plant_context, trajectory.value(current_time))
+        if meshcat:
+            AddMeshactProgressSphere(meshcat, t, overall_length, plant, root_context)
+        visualizer.ForcedPublish(visualizer_context)
+
+    visualizer.StopRecording()
+    visualizer.PublishRecording()
+
 
 def trajopt_shelves_demo(meshcat):
     meshcat.Delete()
@@ -518,6 +564,7 @@ def run_single_traj_opt(plant, X_WGStart, X_WGgoal, plant_context):
         print("Trajectory optimization succeeded")
         return trajopt.ReconstructTrajectory(result)
 
+
 def trajopt_screwing_demo(meshcat):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
@@ -561,7 +608,7 @@ def trajopt_screwing_demo(meshcat):
     diff2_c.AddMeshcatTriad(meshcat, 'start', X_PT=X_G['initial'], opacity=0.2)
 
     goal_frames = ['prepick', 'pick'] 
-    st = StackedTrajectory()
+    stacked_trajectores = []
     for goal in goal_frames:
         X_WGStart = X_WGcurrent_getter()
         X_WGgoal = X_G[goal]
@@ -571,15 +618,12 @@ def trajopt_screwing_demo(meshcat):
         if not interm_traj:
             return
         #plant.SetPositions(plant_context, interm_traj.FinalValue())
-        st.Append(interm_traj)
-        print(st.FinalValue(), st.FinalValue().shape)
+        stacked_trajectores.append(interm_traj)
+        print(interm_traj.FinalValue(), interm_traj.FinalValue().shape)
         print('interm_traj {} {}'.format(interm_traj.start_time(), interm_traj.end_time()))
 
-    #PublishPositionTrajectory(st, context,
-    #                          plant, visualizer, meshcat)
-    #collision_visualizer.ForcedPublish(
-    #    collision_visualizer.GetMyContextFromRoot(context))
-
+    PublishStackOfPositionTrajectores(stacked_trajectores, context, plant, visualizer, meshcat)
+    collision_visualizer.ForcedPublish(collision_visualizer.GetMyContextFromRoot(context))
 
 
 def run_alt_main(scenario):
