@@ -29,6 +29,22 @@ BINS = 'bins'
 TRAJOPT_SCREWING = 'trajopt_screwing'
 SCENARIOS = [SHELVES, BINS, TRAJOPT_SCREWING]
 
+def string_from_transform(X):
+    data = X.translation().tolist() + [np.degrees(X.rotation().ToRollPitchYaw().vector()[-1])]
+    return 'pos={:.2f}, {:.2f}, {:.2f}; azimuth={:.0f}'.format(*data)
+
+
+def get_present_plant_position_with_inf(plant, plant_context, model_name='iiwa'):
+    iiwa_model_instance = plant.GetModelInstanceByName(model_name)
+    indices = list(map(int, plant.GetJointIndices(model_instance=iiwa_model_instance)))
+    n = plant.num_positions()
+    plant_0 = plant.GetPositions(plant_context)
+    plant_inf = np.eye(n) * 1.e-9
+    for i in zip(indices):
+        plant_inf[i, i] = 1
+    return plant_0, plant_inf
+
+
 def AddTriad(source_id,
              frame_id,
              scene_graph,
@@ -366,6 +382,7 @@ def trajopt_shelves_demo(meshcat):
     print('break line to view animation:')
     _ = sys.stdin.readline()
 
+
 def AddPackagePaths(parser):
     # Remove once https://github.com/RobotLocomotion/drake/issues/10531 lands.
     parser.package_map().PopulateFromFolder(FindResource(""))
@@ -491,30 +508,38 @@ def parse_args():
     return vars(parser.parse_args())
 
 
-def constrain_position(plant, trajopt, X_WG, target_time, plant_context):
+def constrain_position(plant, trajopt, X_WG, target_time, plant_context, with_orientation=False):
     gripper_frame = plant.GetBodyByName("body").body_frame()
-    # goal constraint
+    if with_orientation:
+        lower_translation, upper_translation = \
+            X_WG.translation() - [.03]*3, X_WG.translation() + [.03]*3
+    else:
+        lower_translation, upper_translation = X_WG.translation(), X_WG.translation()
+
     goal_constraint = PositionConstraint(plant, plant.world_frame(),
-                                         X_WG.translation() - [.03]*3,
-                                         X_WG.translation() + [.03]*3,
+                                         lower_translation,
+                                         upper_translation,
                                          gripper_frame,
                                          [0, 0., 0.],
                                          plant_context)
-    # print('its inv:', np.degrees(X_WGoal.rotation().inverse().ToRollPitchYaw().vector()))
-    goal_orientation_constraint = OrientationConstraint(plant,
-                                                        gripper_frame,
-                                                        X_WG.rotation().inverse(),
-                                                        plant.world_frame(),
-                                                        RotationMatrix(),
-                                                        np.radians(5),
-                                                        plant_context)
-    trajopt.AddPathPositionConstraint(goal_orientation_constraint, target_time)
     trajopt.AddPathPositionConstraint(goal_constraint, target_time)
+    # print('its inv:', np.degrees(X_WGoal.rotation().inverse().ToRollPitchYaw().vector()))
+    if with_orientation:
+        goal_orientation_constraint = OrientationConstraint(plant,
+                                                            gripper_frame,
+                                                            X_WG.rotation().inverse(),
+                                                            plant.world_frame(),
+                                                            RotationMatrix(),
+                                                            np.radians(5),
+                                                            plant_context)
+        trajopt.AddPathPositionConstraint(goal_orientation_constraint, target_time)
 
 
-def run_single_traj_opt(plant, X_WGStart, X_WGgoal, plant_context):
-    gripper_frame = plant.GetBodyByName("body").body_frame()
-    q0, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
+def run_single_traj_opt(traj_name, plant, X_WGStart, X_WGgoal, plant_context,
+                        constrain_orientation_at_start=False,
+                        joint_space_constraints=False):
+    print('optimize [{}] {} from {}'.format(traj_name, string_from_transform(X_WGgoal), string_from_transform(X_WGStart)))
+
     num_q = plant.num_positions()
     num_c = 12
     print('num_positions: {}; num control points: {}'.format(num_q, num_c))
@@ -528,27 +553,21 @@ def run_single_traj_opt(plant, X_WGStart, X_WGgoal, plant_context):
 
     plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
     plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0)
-    print(plant_v_lower_limits, plant_v_upper_limits)
-
     trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
 
     trajopt.AddDurationConstraint(5, 10)
 
     # start constraint
-    start_constraint = PositionConstraint(plant,
-                                          plant.world_frame(),
-                                          X_WGStart.translation(),
-                                          X_WGStart.translation(),
-                                          gripper_frame,
-                                          [0, 0.0, 0],
-                                          plant_context)
-    trajopt.AddPathPositionConstraint(start_constraint, 0)
-    prog.AddQuadraticErrorCost(inf0, q0,
-                               trajopt.control_points()[:, 0])
+    constrain_position(plant, trajopt, X_WGStart, 0, plant_context, constrain_orientation_at_start)
 
-    constrain_position(plant, trajopt, X_WGgoal, 1, plant_context)
-    prog.AddQuadraticErrorCost(inf0, q0,
-                               trajopt.control_points()[:, -1])
+
+    with_orientation=True
+    constrain_position(plant, trajopt, X_WGgoal, 1, plant_context, with_orientation)
+
+    if joint_space_constraints:
+        q0, inf0 = get_present_plant_position_with_inf(plant, plant_context, 'iiwa7')
+        prog.AddQuadraticErrorCost(inf0, q0, trajopt.control_points()[:, 0])
+        prog.AddQuadraticErrorCost(inf0, q0, trajopt.control_points()[:, -1])
 
     # start and end with zero velocity
     trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
@@ -559,7 +578,7 @@ def run_single_traj_opt(plant, X_WGStart, X_WGgoal, plant_context):
     result = Solve(prog)
     if not result.is_success():
         print("Trajectory optimization failed")
-        print(result.get_solver_id().name())
+        print(result.get_solver_id().name(), result.GetInfeasibleConstraintNames(prog))
     else:
         print("Trajectory optimization succeeded")
         return trajopt.ReconstructTrajectory(result)
@@ -608,19 +627,25 @@ def trajopt_screwing_demo(meshcat):
     diff2_c.AddMeshcatTriad(meshcat, 'start', X_PT=X_G['initial'], opacity=0.2)
 
     goal_frames = ['prepick', 'pick'] 
+    names = {
+        'prepick' : 'prepick from init',
+        'pick' : 'pick from prepick'
+    }
     stacked_trajectores = []
     for goal in goal_frames:
         X_WGStart = X_WGcurrent_getter()
         X_WGgoal = X_G[goal]
         diff2_c.AddMeshcatTriad(meshcat, 'goal_{}'.format(goal), X_PT=X_WGgoal, opacity=0.4)
 
-        interm_traj = run_single_traj_opt(plant, X_WGStart, X_WGgoal, plant_context)
+        # constrain a start orientation for trajecties other than the first
+        constrain_start_orientation = goal=='pick'
+        joint_space_constraints = True #goal=='prepick'
+        interm_traj = run_single_traj_opt(names[goal], plant, X_WGStart, X_WGgoal, plant_context, constrain_start_orientation, joint_space_constraints)
         if not interm_traj:
             return
-        #plant.SetPositions(plant_context, interm_traj.FinalValue())
+        plant.SetPositions(plant_context, interm_traj.FinalValue())
+        # print('interm_traj {} {}'.format(interm_traj.start_time(), interm_traj.end_time()))
         stacked_trajectores.append(interm_traj)
-        print(interm_traj.FinalValue(), interm_traj.FinalValue().shape)
-        print('interm_traj {} {}'.format(interm_traj.start_time(), interm_traj.end_time()))
 
     PublishStackOfPositionTrajectores(stacked_trajectores, context, plant, visualizer, meshcat)
     collision_visualizer.ForcedPublish(collision_visualizer.GetMyContextFromRoot(context))
