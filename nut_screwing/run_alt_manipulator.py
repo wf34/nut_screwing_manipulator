@@ -615,11 +615,11 @@ def run_single_traj_opt(traj_name, plant,
         trajopt.SetInitialGuess(BsplineTrajectory(trajopt.basis(), q_guess))
 
     start_lim = 0    #if traj_name=='prepick from init' else 0.25
-    end_lim   = 0.03 if traj_name=='prepick from init' else 0.1
+    end_lim   = 0.03 #if traj_name=='prepick from init' else 0.1
     constrain_position(plant, trajopt, X_WGStart, 0, plant_context, constrain_orientation_at_start, pos_limit=start_lim)
 
-    if traj_name=='prepick from init':
-        constrain_position(plant, trajopt, X_WGgoal,  1, plant_context, with_orientation=True, pos_limit=end_lim)
+    #if traj_name=='prepick from init':
+    constrain_position(plant, trajopt, X_WGgoal,  1, plant_context, with_orientation=True, pos_limit=end_lim)
 
     #if traj_name=='pick from prepick':
     #    vel_lb = [0]*20
@@ -633,7 +633,8 @@ def run_single_traj_opt(traj_name, plant,
     if joint_space_constraints:
         q0, inf0 = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
         prog.AddQuadraticErrorCost(inf0, q0, trajopt.control_points()[:, 0])
-        prog.AddQuadraticErrorCost(inf0, q0, trajopt.control_points()[:, -1])
+        qq = q0 if traj_name=='prepick from init' else q_goal
+        prog.AddQuadraticErrorCost(inf0, qq, trajopt.control_points()[:, -1])
 
     # start and end with zero velocity
     trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
@@ -648,7 +649,10 @@ def run_single_traj_opt(traj_name, plant,
         print(result.get_solver_id().name(), result.GetInfeasibleConstraintNames(prog))
     else:
         print("Trajectory optimization succeeded")
-        return trajopt.ReconstructTrajectory(result)
+        rez =  trajopt.ReconstructTrajectory(result)
+        if traj_name=='pick from prepick':
+            print(rez.control_points())
+        return rez
 
 
 def trajopt_screwing_demo(meshcat):
