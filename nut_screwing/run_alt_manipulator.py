@@ -551,7 +551,7 @@ def constrain_position(plant, trajopt,
 def get_torque_coords(plant, X_WGgoal, q0):
     ik = inverse_kinematics.InverseKinematics(plant)
     q_variables = ik.q()
-    print(q_variables.shape, q0.shape)
+    # print(q_variables.shape, q0.shape)
     prog = ik.prog()
     prog.SetInitialGuess(q_variables, q0)
     prog.AddCost(np.square(np.dot(q_variables, q0)))
@@ -568,7 +568,7 @@ def get_torque_coords(plant, X_WGgoal, q0):
         theta_bound=np.radians(3))
     result = Solve(prog)
     assert result.is_success()
-    print(result.get_solver_id().name())
+    # print(result.get_solver_id().name())
     return result.GetSolution(q_variables)
 
 
@@ -584,7 +584,7 @@ def run_traj_opt_towards_prepick(traj_name,
 
     num_q = plant.num_positions()
     num_c = 12
-    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
+    # print('num_positions: {}; num control points: {}'.format(num_q, num_c))
 
     trajopt = KinematicTrajectoryOptimization(num_q, num_c)
     prog = trajopt.get_mutable_prog()
@@ -633,7 +633,6 @@ def run_traj_opt_towards_pick(traj_name,
 
     num_q = plant.num_positions()
     num_c = 12
-    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
 
     trajopt = KinematicTrajectoryOptimization(num_q, num_c)
     prog = trajopt.get_mutable_prog()
@@ -648,8 +647,8 @@ def run_traj_opt_towards_pick(traj_name,
     qx, inf0 = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
     q_goal = get_torque_coords(plant, X_WGgoal, qx)
 
-    print('qx', qx)
-    print('qgoal', q_goal)
+    #print('qx', qx)
+    #print('qgoal', q_goal)
 
     #plant.SetPositions(plant_context, q_goal)
     #visualizer.ForcedPublish(visualizer.GetMyContextFromRoot(context))
@@ -683,11 +682,62 @@ def run_traj_opt_towards_pick(traj_name,
     return handle_opt_result(result, trajopt, prog)
 
 
-def run_traj_opt_towards_place(traj_name, plant,
-                              X_WGStart, X_WGgoal,
-                              context,
-                              visualizer=None):
-    return
+def run_traj_opt_towards_place(traj_name,
+                               X_WGStart, X_WGgoal,
+                               plant, context,
+                               visualizer=None):
+    plant_context = plant.GetMyContextFromRoot(context)
+    print('optimize [{}] {} from {}'.format(
+        traj_name,
+        string_from_transform(X_WGgoal),
+        string_from_transform(X_WGStart)))
+
+    num_q = plant.num_positions()
+    num_c = 12
+    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
+
+    trajopt = KinematicTrajectoryOptimization(num_q, num_c)
+    prog = trajopt.get_mutable_prog()
+
+    trajopt.AddPositionBounds(plant.GetPositionLowerLimits(),
+                              plant.GetPositionUpperLimits())
+    plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
+    plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0)
+    trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
+
+    trajopt.AddDurationConstraint(5, 10)
+    qx, inf0 = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
+
+    start_lim = 0
+    end_lim   = 0.03
+    constrain_position(plant, trajopt, X_WGStart, 0, plant_context,
+                       with_orientation=True, pos_limit=start_lim)
+    constrain_position(plant, trajopt, X_WGgoal,  1, plant_context,
+                       with_orientation=True, pos_limit=end_lim)
+
+    q_goal = get_torque_coords(plant, X_WGgoal, qx)
+
+    #plant.SetPositions(plant_context, q_goal)
+    #visualizer.ForcedPublish(visualizer.GetMyContextFromRoot(context))
+    #time.sleep(30)
+    #exit(0)
+
+    q_guess = np.linspace(qx.reshape((num_q, 1)),
+                          q_goal.reshape((num_q, 1)),
+                          trajopt.num_control_points()
+        )[:, :, 0].T
+    trajopt.SetInitialGuess(BsplineTrajectory(trajopt.basis(), q_guess))
+
+    prog.AddQuadraticErrorCost(inf0, qx, trajopt.control_points()[:, 0])
+    prog.AddQuadraticErrorCost(inf0, q_goal, trajopt.control_points()[:, -1])
+
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 0)
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 1)
+
+    result = Solve(prog)
+    return handle_opt_result(result, trajopt, prog)
 
 def trajopt_screwing_demo(meshcat):
     builder = DiagramBuilder()
@@ -731,7 +781,7 @@ def trajopt_screwing_demo(meshcat):
 
     diff2_c.AddMeshcatTriad(meshcat, 'start', X_PT=X_G['initial'], opacity=0.2)
 
-    goal_frames = ['prepick', 'pick'] 
+    goal_frames = ['prepick', 'pick', 'place']
     names = {
         'prepick' : 'prepick from init',
         'pick' : 'pick from prepick',
