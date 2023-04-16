@@ -30,9 +30,20 @@ BINS = 'bins'
 TRAJOPT_SCREWING = 'trajopt_screwing'
 SCENARIOS = [SHELVES, BINS, TRAJOPT_SCREWING]
 
+
 def string_from_transform(X):
     data = X.translation().tolist() + [np.degrees(X.rotation().ToRollPitchYaw().vector()[-1])]
     return 'pos={:.2f}, {:.2f}, {:.2f}; azimuth={:.0f}'.format(*data)
+
+
+def handle_opt_result(result, trajopt, prog):
+    if not result.is_success():
+        print("Trajectory optimization failed")
+        print(dir(result))
+        print(result.get_solver_id().name(), result.GetInfeasibleConstraintNames(prog))
+    else:
+        print("Trajectory optimization succeeded")
+        return trajopt.ReconstructTrajectory(result)
 
 
 def get_present_plant_position_with_inf(plant, plant_context, information=1., model_name='iiwa'):
@@ -561,99 +572,122 @@ def get_torque_coords(plant, X_WGgoal, q0):
     return result.GetSolution(q_variables)
 
 
-def run_single_traj_opt(traj_name, plant,
-                        X_WGStart, X_WGgoal,
-                        plant_context,
-                        constrain_orientation_at_start=False,
-                        joint_space_constraints=False,
-                        visualizer=None,
-                        context=None):
-    print('optimize [{}] {} from {}'.format(traj_name, string_from_transform(X_WGgoal), string_from_transform(X_WGStart)))
-    num_q = plant.num_positions()
-    if traj_name=='prepick from init':
-        num_c = 12
-    else:
-        num_c = 12
+def run_traj_opt_towards_prepick(traj_name,
+                                 X_WGStart, X_WGgoal,
+                                 plant, context,
+                                 visualizer=None):
+    plant_context = plant.GetMyContextFromRoot(context)
+    print('optimize [{}] {} from {}'.format(
+        traj_name,
+        string_from_transform(X_WGgoal),
+        string_from_transform(X_WGStart)))
 
+    num_q = plant.num_positions()
+    num_c = 12
     print('num_positions: {}; num control points: {}'.format(num_q, num_c))
 
     trajopt = KinematicTrajectoryOptimization(num_q, num_c)
     prog = trajopt.get_mutable_prog()
-    if traj_name=='prepick from init':
-        trajopt.AddDurationCost(1.0)
-        trajopt.AddPathLengthCost(1.0)
+
+    trajopt.AddDurationCost(1.0)
+    trajopt.AddPathLengthCost(1.0)
 
     trajopt.AddPositionBounds(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits())
 
     plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
     plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0)
-    if True: #traj_name=='prepick from init':
-        trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
+    trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
 
-    if traj_name=='prepick from init':
-        trajopt.AddDurationConstraint(5, 10)
-    else:
-        trajopt.AddDurationConstraint(1, 5)
-        qx, _ = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
-        q_goal = get_torque_coords(plant, X_WGgoal, qx)
-        print('qx', qx)
-        print('qgoal', q_goal)
-        #plant.SetPositions(plant_context, q_goal)
-        #visualizer.ForcedPublish(visualizer.GetMyContextFromRoot(context))
-        #time.sleep(30)
-        #exit(0)
-        
-        #print('q_guess', q_guess.shape, 'num_control_points', trajopt.num_control_points())
-        assert len(qx) == num_q
-        assert len(q_goal) == num_q
-        #q_guess = np.tile(qx.reshape((num_q,1)), (1, trajopt.num_control_points()))
-        q_guess = np.linspace(qx.reshape((num_q, 1)), q_goal.reshape((num_q, 1)), trajopt.num_control_points())[:, :, 0].T
-        #print('q_g shape:', q_guess.shape, '.', len(qx), trajopt.num_control_points())
-        #print('0th joint ', q_guess[0, :])
-        #print('6th joint ', q_guess[6, :])
-        #print('9th joint ', q_guess[-1, :])
-        trajopt.SetInitialGuess(BsplineTrajectory(trajopt.basis(), q_guess))
+    trajopt.AddDurationConstraint(5, 10)
 
-    start_lim = 0    #if traj_name=='prepick from init' else 0.25
-    end_lim   = 0.03 #if traj_name=='prepick from init' else 0.1
-    constrain_position(plant, trajopt, X_WGStart, 0, plant_context, constrain_orientation_at_start, pos_limit=start_lim)
+    start_lim = 0
+    end_lim   = 0.03
 
-    #if traj_name=='prepick from init':
-    constrain_position(plant, trajopt, X_WGgoal,  1, plant_context, with_orientation=True, pos_limit=end_lim)
+    constrain_position(plant, trajopt, X_WGStart, 0, plant_context,
+                       with_orientation=False, pos_limit=start_lim)
+    constrain_position(plant, trajopt, X_WGgoal,  1, plant_context,
+                       with_orientation=True, pos_limit=end_lim)
 
-    #if traj_name=='pick from prepick':
-    #    vel_lb = [0]*20
-    #    vel_ub = [0.5]*20
-    #    vel_constraint = LinearConstraint(np.eye(20), vel_lb, vel_ub)
-    #    trajopt.AddVelocityConstraintAtNormalizedTime(vel_constraint, .5)
-    #vel_lb = [0] * num_q
-    #vel_ub = [0.1] * num_q
-    #trajopt.AddPathVelocityConstraint(vel_lb, vel_ub, .5)
+    q0, inf0 = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
+    prog.AddQuadraticErrorCost(inf0, q0, trajopt.control_points()[:, 0])
+    prog.AddQuadraticErrorCost(inf0, q0, trajopt.control_points()[:, -1])
 
-    if joint_space_constraints:
-        q0, inf0 = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
-        prog.AddQuadraticErrorCost(inf0, q0, trajopt.control_points()[:, 0])
-        qq = q0 if traj_name=='prepick from init' else q_goal
-        prog.AddQuadraticErrorCost(inf0, qq, trajopt.control_points()[:, -1])
-
-    # start and end with zero velocity
     trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
         (num_q, 1)), 0)
     trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
         (num_q, 1)), 1)
 
     result = Solve(prog)
-    if not result.is_success():
-        print("Trajectory optimization failed")
-        print(dir(result))
-        print(result.get_solver_id().name(), result.GetInfeasibleConstraintNames(prog))
-    else:
-        print("Trajectory optimization succeeded")
-        rez =  trajopt.ReconstructTrajectory(result)
-        if traj_name=='pick from prepick':
-            print(rez.control_points())
-        return rez
+    return handle_opt_result(result, trajopt, prog)
 
+
+def run_traj_opt_towards_pick(traj_name,
+                              X_WGStart, X_WGgoal,
+                              plant, context,
+                              visualizer=None):
+    plant_context = plant.GetMyContextFromRoot(context)
+    print('optimize [{}] {} from {}'.format(
+        traj_name,
+        string_from_transform(X_WGgoal),
+        string_from_transform(X_WGStart)))
+
+    num_q = plant.num_positions()
+    num_c = 12
+    print('num_positions: {}; num control points: {}'.format(num_q, num_c))
+
+    trajopt = KinematicTrajectoryOptimization(num_q, num_c)
+    prog = trajopt.get_mutable_prog()
+
+    trajopt.AddPositionBounds(plant.GetPositionLowerLimits(),
+                              plant.GetPositionUpperLimits())
+    plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
+    plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0)
+    trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
+
+    trajopt.AddDurationConstraint(1, 5)
+    qx, inf0 = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
+    q_goal = get_torque_coords(plant, X_WGgoal, qx)
+
+    print('qx', qx)
+    print('qgoal', q_goal)
+
+    #plant.SetPositions(plant_context, q_goal)
+    #visualizer.ForcedPublish(visualizer.GetMyContextFromRoot(context))
+    #time.sleep(30)
+    #exit(0)
+
+    assert len(qx) == num_q
+    assert len(q_goal) == num_q
+    q_guess = np.linspace(qx.reshape((num_q, 1)),
+                          q_goal.reshape((num_q, 1)),
+                          trajopt.num_control_points()
+        )[:, :, 0].T
+    trajopt.SetInitialGuess(BsplineTrajectory(trajopt.basis(), q_guess))
+
+    start_lim = 0
+    end_lim   = 0.03
+    constrain_position(plant, trajopt, X_WGStart, 0, plant_context,
+                       with_orientation=True, pos_limit=start_lim)
+    constrain_position(plant, trajopt, X_WGgoal,  1, plant_context,
+                       with_orientation=True, pos_limit=end_lim)
+
+    prog.AddQuadraticErrorCost(inf0, qx, trajopt.control_points()[:, 0])
+    prog.AddQuadraticErrorCost(inf0, q_goal, trajopt.control_points()[:, -1])
+
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 0)
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 1)
+
+    result = Solve(prog)
+    return handle_opt_result(result, trajopt, prog)
+
+
+def run_traj_opt_towards_place(traj_name, plant,
+                              X_WGStart, X_WGgoal,
+                              context,
+                              visualizer=None):
+    return
 
 def trajopt_screwing_demo(meshcat):
     builder = DiagramBuilder()
@@ -700,27 +734,28 @@ def trajopt_screwing_demo(meshcat):
     goal_frames = ['prepick', 'pick'] 
     names = {
         'prepick' : 'prepick from init',
-        'pick' : 'pick from prepick'
+        'pick' : 'pick from prepick',
+        'place' : 'place from pick',
     }
+    funcs = {
+        'prepick' : run_traj_opt_towards_prepick,
+        'pick' : run_traj_opt_towards_pick,
+        'place' : run_traj_opt_towards_place,
+    }
+
     stacked_trajectores = []
     for goal in goal_frames:
         X_WGStart = X_WGcurrent_getter()
         X_WGgoal = X_G[goal]
         diff2_c.AddMeshcatTriad(meshcat, 'goal_{}'.format(goal), X_PT=X_WGgoal, opacity=0.4)
 
-        # constrain a start orientation for trajecties other than the first
-        constrain_start_orientation = goal=='pick'
-        joint_space_constraints = True #goal=='prepick'
-
-        if goal == 'pick':
-            pass
-
-        interm_traj = run_single_traj_opt(names[goal], plant, X_WGStart, X_WGgoal, plant_context, constrain_start_orientation, joint_space_constraints, visualizer, context)
+        f = funcs[goal]
+        interm_traj = f(names[goal], X_WGStart, X_WGgoal, plant, context, visualizer)
         if not interm_traj:
             return
+
         plant.SetPositions(plant_context, interm_traj.FinalValue())
         visualizer.ForcedPublish(visualizer.GetMyContextFromRoot(context))
-        # print('interm_traj {} {}'.format(interm_traj.start_time(), interm_traj.end_time()))
         stacked_trajectores.append(interm_traj)
 
     PublishStackOfPositionTrajectores(stacked_trajectores, context, plant, visualizer, meshcat)
