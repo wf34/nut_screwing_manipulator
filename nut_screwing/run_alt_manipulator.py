@@ -524,7 +524,8 @@ def constrain_position(plant, trajopt,
                        X_WG, target_time,
                        plant_context,
                        with_orientation=False,
-                       pos_limit=0.0):
+                       pos_limit=0.0,
+                       theta_bound_degrees=5):
     lower_translation, upper_translation = \
         X_WG.translation() - [pos_limit]*3, X_WG.translation() + [pos_limit]*3
 
@@ -543,7 +544,7 @@ def constrain_position(plant, trajopt,
                                                        X_WG.rotation().inverse(),
                                                        plant.world_frame(),
                                                        RotationMatrix(),
-                                                       np.radians(5),
+                                                       np.radians(theta_bound_degrees),
                                                        plant_context)
         trajopt.AddPathPositionConstraint(orientation_constraint, target_time)
 
@@ -739,6 +740,65 @@ def run_traj_opt_towards_place(traj_name,
     result = Solve(prog)
     return handle_opt_result(result, trajopt, prog)
 
+
+def run_traj_opt_back_to_init(traj_name,
+                              X_WGStart, X_WGgoal,
+                              plant, context,
+                              visualizer=None):
+    plant_context = plant.GetMyContextFromRoot(context)
+    print('optimize [{}] {} from {}'.format(
+        traj_name,
+        string_from_transform(X_WGgoal),
+        string_from_transform(X_WGStart)))
+
+    num_q = plant.num_positions()
+    num_c = 12
+    # print('num_positions: {}; num control points: {}'.format(num_q, num_c))
+
+    trajopt = KinematicTrajectoryOptimization(num_q, num_c)
+    prog = trajopt.get_mutable_prog()
+
+    trajopt.AddDurationCost(1.0)
+    trajopt.AddPathLengthCost(1.0)
+
+    trajopt.AddPositionBounds(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits())
+
+    plant_v_lower_limits = np.nan_to_num(plant.GetVelocityLowerLimits(), neginf=0)
+    plant_v_upper_limits = np.nan_to_num(plant.GetVelocityUpperLimits(), posinf=0) #* 0.05
+    trajopt.AddVelocityBounds(plant_v_lower_limits, plant_v_upper_limits)
+
+    trajopt.AddDurationConstraint(5, 10)
+
+    start_lim = 0
+    end_lim   = 0.01
+
+    constrain_position(plant, trajopt, X_WGStart, 0, plant_context,
+                       with_orientation=True, pos_limit=start_lim)
+    constrain_position(plant, trajopt, X_WGgoal,  1, plant_context,
+                       with_orientation=True, pos_limit=end_lim,
+                       theta_bound_degrees=1.)
+
+    q0, _ = get_present_plant_position_with_inf(plant, plant_context, 1., 'iiwa7')
+    q_goal, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
+
+    q_guess = np.linspace(q0.reshape((num_q, 1)),
+                          q_goal.reshape((num_q, 1)),
+                          trajopt.num_control_points()
+        )[:, :, 0].T
+    trajopt.SetInitialGuess(BsplineTrajectory(trajopt.basis(), q_guess))
+
+    prog.AddQuadraticErrorCost(inf0, q_goal, trajopt.control_points()[:, 0])
+    prog.AddQuadraticErrorCost(inf0, q_goal, trajopt.control_points()[:, -1])
+
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 0)
+    trajopt.AddPathVelocityConstraint(np.zeros((num_q, 1)), np.zeros(
+        (num_q, 1)), 1)
+
+    result = Solve(prog)
+    return handle_opt_result(result, trajopt, prog)
+
+
 def trajopt_screwing_demo(meshcat):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
@@ -781,16 +841,20 @@ def trajopt_screwing_demo(meshcat):
 
     diff2_c.AddMeshcatTriad(meshcat, 'start', X_PT=X_G['initial'], opacity=0.2)
 
-    goal_frames = ['prepick', 'pick', 'place']
+    goal_frames = ['prepick', 'pick', 'place', 'postplace', 'initial']
     names = {
         'prepick' : 'prepick from init',
         'pick' : 'pick from prepick',
         'place' : 'place from pick',
+        'postplace' : 'postplace from place',
+        'initial': 'init from postplace',
     }
     funcs = {
         'prepick' : run_traj_opt_towards_prepick,
         'pick' : run_traj_opt_towards_pick,
         'place' : run_traj_opt_towards_place,
+        'postplace' : run_traj_opt_towards_pick,
+        'initial' : run_traj_opt_back_to_init
     }
 
     stacked_trajectores = []
