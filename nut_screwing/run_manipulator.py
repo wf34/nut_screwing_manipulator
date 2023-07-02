@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import time
 import os
@@ -197,7 +198,7 @@ def build_scene(meshcat, controller_type, log_destination):
     desired_iiwa_position_port = create_iiwa_position_desired_port(builder, plant, iiwa, iiwa_pid_controller)
     desired_wsg_position_port = create_wsg_position_desired_port(builder, plant, wsg)
 
-    if controller_type in [DIFF_IK, OPEN_IK]:
+    if controller_type in [DIFF_IK, DIFF3_IK, OPEN_IK, EXPERIMENTAL]:
         temp_plant_context = plant.CreateDefaultContext()
         X_G = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("body"))}
         X_O = {"initial": plant.EvalBodyPoseInWorld(temp_plant_context, plant.GetBodyByName("nut"))}
@@ -222,10 +223,9 @@ def build_scene(meshcat, controller_type, log_destination):
                                              scene_graph, X_G, X_O,
                                              draw_frames)
     elif EXPERIMENTAL == controller_type:
-        print('makes', EXPERIMENTAL)
         output_iiwa_position_port, output_wsg_position_port, integrator = \
             e_c.create_experimental_controller(builder, plant, measured_iiwa_position_port,
-                                               temp_context, X_G)
+                                               temp_plant_context, X_G)
     else:
         assert False, 'unreachable'
 

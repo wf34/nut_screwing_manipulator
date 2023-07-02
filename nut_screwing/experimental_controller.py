@@ -46,10 +46,10 @@ def create_experimental_controller(builder, plant, input_iiwa_position_port, con
             ith_joint = plant.get_joint(joint_index=i)
             print('{}th joint!! parent: {} child: {}; own name: {}'.format(i, ith_joint.parent_body().name(), ith_joint.child_body().name(), ith_joint.name()))
 
-    q0, inf0 = get_default_plant_position_with_inf(plant)
-    print_model_dofs('iiwa')
-    print_model_dofs('gripper')
-    print_model_dofs('nut_and_bolt')
+    q0, inf0 = get_default_plant_position_with_inf(plant, 'iiwa7')
+    print_model_dofs('iiwa7')
+    #print_model_dofs('gripper')
+    #print_model_dofs('nut_and_bolt')
 
     for name in ['num_positions', 'num_velocities', 'num_joints', 'num_frames', 'num_model_instances', 'num_bodies', 'num_actuators', 'num_actuated_dofs']:
         print('{}={}'.format(name, getattr(plant, name)()))
