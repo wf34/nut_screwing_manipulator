@@ -31,6 +31,7 @@ from pydrake.multibody.parsing import Parser
 import sim_helper as sh
 import differential_controller as diff_c
 import new_differential_controller as diff2_c
+import differential_advanced as diff3_c
 import open_loop_controller as ol_c
 import experimental_controller as e_c
 import state_monitor as sm
@@ -39,6 +40,7 @@ import run_alt_manipulator as ram
 EXPERIMENTAL = 'experimental'
 DIFF_IK = 'differential'
 DIFF2_IK = 'differential2'
+DIFF3_IK = 'differential3'
 OPEN_IK = 'open_loop'
 
 TIME_STEP=0.0001 #finer
@@ -215,6 +217,10 @@ def build_scene(meshcat, controller_type, log_destination):
         integrator = None
         output_iiwa_position_port, output_wsg_position_port = \
             diff2_c.add_new_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat)
+    elif DIFF3_IK == controller_type:
+        integrator = None
+        output_iiwa_position_port, output_wsg_position_port = \
+            diff3_c.create_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat, temp_plant_context)
     elif OPEN_IK == controller_type:
         integrator = None
         draw_frames = True
@@ -290,7 +296,7 @@ def simulate_nut_screwing(controller_type, log_destination):
 
 def parse_args():
     parser = argparse.ArgumentParser(description=sys.argv[0])
-    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, DIFF2_IK, OPEN_IK, EXPERIMENTAL], help='what controls manipulator')
+    parser.add_argument('-c', '--controller_type', required=True, choices=[DIFF_IK, DIFF2_IK, DIFF3_IK, OPEN_IK, EXPERIMENTAL], help='what controls manipulator')
     parser.add_argument('-l', '--log_destination', default='', help='where to put telemetry')
     return vars(parser.parse_args())
 
