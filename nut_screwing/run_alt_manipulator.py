@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import functools
 import itertools
@@ -33,9 +34,9 @@ def string_from_transform(X):
 
 def handle_opt_result(result, trajopt, prog):
     if not result.is_success():
-        print("Trajectory optimization failed")
         print(dir(result))
         print(result.get_solver_id().name(), result.GetInfeasibleConstraintNames(prog))
+        assert False, "Trajectory optimization failed"
     else:
         print("Trajectory optimization succeeded")
         return trajopt.ReconstructTrajectory(result)
@@ -166,26 +167,6 @@ def AddIiwa(plant, collision_model="no_collision"):
 
     return iiwa
 
-def AddPlanarIiwa(plant):
-    urdf = FindResourceOrThrow(
-        "drake/manipulation/models/iiwa_description/urdf/"
-        "planar_iiwa14_spheres_dense_elbow_collision.urdf")
-
-    parser = Parser(plant)
-    iiwa = parser.AddModelFromFile(urdf)
-    plant.WeldFrames(plant.world_frame(), plant.GetFrameByName("iiwa_link_0"))
-
-    # Set default positions:
-    q0 = [0.1, -1.2, 1.6]
-    index = 0
-    for joint_index in plant.GetJointIndices(iiwa):
-        joint = plant.get_mutable_joint(joint_index)
-        if isinstance(joint, RevoluteJoint):
-            joint.set_default_angle(q0[index])
-            index += 1
-
-    return iiwa
-
 
 def AddMeshactProgressSphere(meshcat, current_time, total_duration, plant, root_context):
     plant_context = plant.GetMyContextFromRoot(root_context)
@@ -295,9 +276,8 @@ def get_torque_coords(plant, X_WGgoal, q0):
 
 def run_traj_opt_towards_prepick(traj_name,
                                  X_WGStart, X_WGgoal,
-                                 plant, context,
+                                 plant, plant_context,
                                  visualizer=None):
-    plant_context = plant.GetMyContextFromRoot(context)
     print('optimize [{}] {} from {}'.format(
         traj_name,
         string_from_transform(X_WGgoal),
@@ -344,9 +324,8 @@ def run_traj_opt_towards_prepick(traj_name,
 
 def run_traj_opt_towards_pick(traj_name,
                               X_WGStart, X_WGgoal,
-                              plant, context,
+                              plant, plant_context,
                               visualizer=None):
-    plant_context = plant.GetMyContextFromRoot(context)
     print('optimize [{}] {} from {}'.format(
         traj_name,
         string_from_transform(X_WGgoal),
@@ -405,9 +384,8 @@ def run_traj_opt_towards_pick(traj_name,
 
 def run_traj_opt_towards_place(traj_name,
                                X_WGStart, X_WGgoal,
-                               plant, context,
+                               plant, plant_context,
                                visualizer=None):
-    plant_context = plant.GetMyContextFromRoot(context)
     print('optimize [{}] {} from {}'.format(
         traj_name,
         string_from_transform(X_WGgoal),
@@ -463,9 +441,8 @@ def run_traj_opt_towards_place(traj_name,
 
 def run_traj_opt_back_to_init(traj_name,
                               X_WGStart, X_WGgoal,
-                              plant, context,
+                              plant, plant_context,
                               visualizer=None):
-    plant_context = plant.GetMyContextFromRoot(context)
     print('optimize [{}] {} from {}'.format(
         traj_name,
         string_from_transform(X_WGgoal),
@@ -519,34 +496,9 @@ def run_traj_opt_back_to_init(traj_name,
     return handle_opt_result(result, trajopt, prog)
 
 
-def trajopt_screwing_demo(meshcat):
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
-    iiwa = AddIiwa(plant, collision_model="with_box_collision")
-    wsg = AddWsg(plant, iiwa, welded=False, sphere=False)
+def solve_for_screwing_trajectories(plant, plant_context, meshcat=None, visualizer=None, visualizer_context=None):
+    #plant_context = plant.GetMyContextFromRoot(context)
 
-    bolt_with_nut = rm.add_manipuland(plant)
-    zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
-    plant.Finalize()
-
-    display_bodies_frames(plant, scene_graph)
-
-    visualizer = MeshcatVisualizer.AddToBuilder(
-        builder, scene_graph, meshcat,
-        MeshcatVisualizerParams(role=Role.kIllustration))
-    collision_visualizer = MeshcatVisualizer.AddToBuilder(
-        builder, scene_graph, meshcat,
-        MeshcatVisualizerParams(prefix="collision", role=Role.kProximity))
-    meshcat.SetProperty("collision", "visible", False)
-
-    diagram = builder.Build()
-    diagram.set_name("nut_screwing")
-
-    context = diagram.CreateDefaultContext()
-    plant_context = plant.GetMyContextFromRoot(context)
-
-    rm.set_iiwa_default_position(plant)
-    
     gripper_body_index = int(plant.GetBodyByName("body").index())
     nut_body_index = int(plant.GetBodyByName("nut").index())
     X_WBcurrent_getter = lambda body_index: plant.get_body_poses_output_port().Eval(plant_context)[body_index]
@@ -581,17 +533,53 @@ def trajopt_screwing_demo(meshcat):
     for goal in goal_frames:
         X_WGStart = X_WGcurrent_getter()
         X_WGgoal = X_G[goal]
-        diff2_c.AddMeshcatTriad(meshcat, 'goal_{}'.format(goal), X_PT=X_WGgoal, opacity=0.4)
+        if meshcat:
+            diff2_c.AddMeshcatTriad(meshcat, 'goal_{}'.format(goal), X_PT=X_WGgoal, opacity=0.4)
 
         f = funcs[goal]
-        interm_traj = f(names[goal], X_WGStart, X_WGgoal, plant, context, visualizer)
+        interm_traj = f(names[goal], X_WGStart, X_WGgoal, plant, plant_context, None)
         if not interm_traj:
             return
 
         plant.SetPositions(plant_context, interm_traj.FinalValue())
-        visualizer.ForcedPublish(visualizer.GetMyContextFromRoot(context))
+        if visualizer:
+            assert visualizer_context
+            visualizer.ForcedPublish(visualizer_context)
         stacked_trajectores.append(interm_traj)
 
+    return stacked_trajectores
+
+
+def trajopt_screwing_demo(meshcat):
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, time_step=rm.TIME_STEP)
+    iiwa = AddIiwa(plant, collision_model="with_box_collision")
+    wsg = AddWsg(plant, iiwa, welded=False, sphere=False)
+
+    bolt_with_nut = rm.add_manipuland(plant)
+    zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
+    plant.Finalize()
+
+    display_bodies_frames(plant, scene_graph)
+
+    visualizer = MeshcatVisualizer.AddToBuilder(
+        builder, scene_graph, meshcat,
+        MeshcatVisualizerParams(role=Role.kIllustration))
+    collision_visualizer = MeshcatVisualizer.AddToBuilder(
+        builder, scene_graph, meshcat,
+        MeshcatVisualizerParams(prefix="collision", role=Role.kProximity))
+    meshcat.SetProperty("collision", "visible", False)
+
+    diagram = builder.Build()
+    diagram.set_name("nut_screwing")
+
+    context = diagram.CreateDefaultContext()
+
+    rm.set_iiwa_default_position(plant)
+    plant_context = plant.GetMyContextFromRoot(context)
+    visualizer_context = visualizer.GetMyContextFromRoot(context)
+    stacked_trajectores = solve_for_screwing_trajectories(plant, plant_context, meshcat, visualizer, visualizer_context)
+    
     PublishStackOfPositionTrajectores(stacked_trajectores, context, plant, visualizer, meshcat)
     collision_visualizer.ForcedPublish(collision_visualizer.GetMyContextFromRoot(context))
 
