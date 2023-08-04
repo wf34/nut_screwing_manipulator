@@ -45,7 +45,7 @@ OPEN_IK = 'open_loop'
 
 TIME_STEP=0.0001 #finer
 TIME_STEP=0.001  #orig
-TIME_STEP=0.007  #faster
+#TIME_STEP=0.007  #faster
 
 def get_manipuland_resource_path():
     #manifest = runfiles.Create()
@@ -219,7 +219,7 @@ def build_scene(meshcat, controller_type, log_destination):
             diff2_c.add_new_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat)
     elif DIFF3_IK == controller_type:
         integrator = None
-        output_iiwa_position_port, output_wsg_position_port = \
+        output_iiwa_position_port, output_wsg_position_port, plan = \
             diff3_c.create_differential_controller(builder, plant, measured_iiwa_state_port, iiwa_pid_controller, meshcat, temp_plant_context)
     elif OPEN_IK == controller_type:
         integrator = None
@@ -272,13 +272,14 @@ def build_scene(meshcat, controller_type, log_destination):
                 plant.GetPositions(plant.GetMyContextFromRoot(simulator.get_mutable_context()),
                                    plant.GetModelInstanceByName("iiwa7")))
     
-    return simulator, visualizer
+    duration = plan.total_time
+    return simulator, visualizer, duration
 
 
 def simulate_nut_screwing(controller_type, log_destination):
     print('hello drake')
     meshcat = sh.StartMeshcat()
-    simulator, visualizer = build_scene(meshcat, controller_type, log_destination)
+    simulator, visualizer, total_time = build_scene(meshcat, controller_type, log_destination)
 
 
     web_url = meshcat.web_url()
@@ -288,8 +289,9 @@ def simulate_nut_screwing(controller_type, log_destination):
     if not simulator:
         return
 
+    print(total_time)
     visualizer.StartRecording(False)
-    simulator.AdvanceTo(5.)
+    simulator.AdvanceTo(total_time)
     visualizer.PublishRecording()
     time.sleep(30)
 

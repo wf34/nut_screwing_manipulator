@@ -1,4 +1,5 @@
-
+import functools
+import itertools
 import numpy as np
 from pydrake.math import RigidTransform, RotationMatrix, RollPitchYaw
 from pydrake.geometry import (
@@ -41,6 +42,8 @@ class SingleTurnTrajectory(LeafSystem):
 
     def Plan(self, context, state):
         opt_trajectories = solve_for_screwing_trajectories(self._plant, self._plant_context, self._meshcat, None, None)
+        self.total_time = functools.reduce(lambda x, y: x + y.end_time(), opt_trajectories, 0.)
+
         state.get_mutable_abstract_state(int(
             self._opt_trajectories_index)).set_value(opt_trajectories)
 
@@ -48,10 +51,10 @@ class SingleTurnTrajectory(LeafSystem):
     def get_entry(self, context):
         target_time = context.get_time()
         opt_trajectories = context.get_abstract_state(int(self._opt_trajectories_index)).get_value()
-        for i, t in enumerate(opt_trajectories):
+        end_times = list(itertools.accumulate(map(lambda x: x.end_time(), opt_trajectories)))
+        for i, (t, curr_end_time) in enumerate(zip(opt_trajectories, end_times)):
             is_last = (len(opt_trajectories) - 1) == i
             eps = 1.e-6
-            curr_end_time = t.end_time()
             assert not is_last or target_time - eps < curr_end_time, 'target_time={:.1f} end_time={:.1f} || trajes ||={} ; cur={}'.format(target_time, curr_end_time, len(opt_trajectories), i)
 
             if target_time > curr_end_time:
@@ -77,7 +80,6 @@ class SingleTurnTrajectory(LeafSystem):
 def create_differential_controller(builder, plant, measured_iiwa_state_port,
                                    iiwa_pid_controller, meshcat, plant_temp_context):
     plan = builder.AddSystem(SingleTurnTrajectory(plant, meshcat, plant_temp_context))
-
     builder.Connect(plant.get_body_poses_output_port(), plan.GetInputPort("body_poses"))
     robot = iiwa_pid_controller.get_multibody_plant_for_control()
 
@@ -88,4 +90,4 @@ def create_differential_controller(builder, plant, measured_iiwa_state_port,
     builder.Connect(measured_iiwa_state_port,
                     diff_ik.GetInputPort("robot_state"))
 
-    return diff_ik.get_output_port(), plan.GetOutputPort("wsg_position")
+    return diff_ik.get_output_port(), plan.GetOutputPort("wsg_position"), plan
