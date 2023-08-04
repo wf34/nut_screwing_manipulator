@@ -37,6 +37,10 @@ def make_wsg_command_trajectory(times):
     traj_wsg_command.AppendFirstOrderSegment(times["place_start"], closed)
     traj_wsg_command.AppendFirstOrderSegment(times["place_end"], closed)
     traj_wsg_command.AppendFirstOrderSegment(times["postplace"], opened)
+
+    if 'finish' in times:
+        traj_wsg_command.AppendFirstOrderSegment(times['finish'], opened)
+
     return traj_wsg_command
 
 # We can write a new System by deriving from the LeafSystem class.

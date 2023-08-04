@@ -12,7 +12,7 @@ from pydrake.all import (AddMultibodyPlantSceneGraph, BsplineTrajectory, Geometr
                          DiagramBuilder, KinematicTrajectoryOptimization, LinearConstraint,
                          MeshcatVisualizer, MeshcatVisualizerParams,
                          MinimumDistanceConstraint, Parser, PositionConstraint, OrientationConstraint,
-                         Rgba, RigidTransform, Role, Solve, Sphere,
+                         Rgba, RigidTransform, Role, Solve, Sphere, PiecewisePolynomial,
                          StartMeshcat, FindResourceOrThrow, RevoluteJoint, RollPitchYaw, GetDrakePath, MeshcatCone,
                          ConstantVectorSource, StackedTrajectory)
 from pydrake.geometry import (Cylinder, GeometryInstance,
@@ -188,6 +188,7 @@ def AddMeshactProgressSphere(meshcat, current_time, total_duration, plant, root_
 
 
 def PublishStackOfPositionTrajectores(trajectories,
+                                      wsg_trajectory,
                                       root_context,
                                       plant,
                                       visualizer,
@@ -212,7 +213,10 @@ def PublishStackOfPositionTrajectores(trajectories,
             break
 
         trajectory = trajectories[current_traj_index]
-        plant.SetPositions(plant_context, trajectory.value(current_time))
+        x = trajectory.value(current_time)
+        wsg_current_value = wsg_trajectory.value(t).ravel()[0]
+        x[7,0] = wsg_current_value
+        plant.SetPositions(plant_context, x)
         if meshcat:
             AddMeshactProgressSphere(meshcat, t, overall_length, plant, root_context)
         visualizer.ForcedPublish(visualizer_context)
@@ -496,6 +500,20 @@ def run_traj_opt_back_to_init(traj_name,
     return handle_opt_result(result, trajopt, prog)
 
 
+def make_wsg_command_trajectory(times):
+    opened = np.array([0.107]);
+    closed = np.array([0.0]);
+    traj_wsg = PiecewisePolynomial.FirstOrderHold([times['initial'], times['prepick']],
+                                                  np.hstack([[opened], [opened]]))
+    traj_wsg.AppendFirstOrderSegment(times['pick'], closed)
+    traj_wsg.AppendFirstOrderSegment(times['place'], closed)
+    traj_wsg.AppendFirstOrderSegment(times['postplace'], opened)
+    traj_wsg.AppendFirstOrderSegment(times['finish'], opened)
+    print(type(traj_wsg))
+
+    return traj_wsg
+
+
 def solve_for_screwing_trajectories(plant, plant_context, meshcat=None, visualizer=None, visualizer_context=None):
     #plant_context = plant.GetMyContextFromRoot(context)
 
@@ -509,7 +527,7 @@ def solve_for_screwing_trajectories(plant, plant_context, meshcat=None, visualiz
 
     X_OinitialOgoal = RigidTransform(RotationMatrix.MakeZRotation(-np.pi / 6))
     X_O['goal'] = X_O['initial'].multiply(X_OinitialOgoal)
-    X_G, times = diff2_c.make_gripper_frames(X_G, X_O)
+    X_G, times_unused = diff2_c.make_gripper_frames(X_G, X_O)
 
     diff2_c.AddMeshcatTriad(meshcat, 'start', X_PT=X_G['initial'], opacity=0.2)
 
@@ -547,7 +565,16 @@ def solve_for_screwing_trajectories(plant, plant_context, meshcat=None, visualiz
             visualizer.ForcedPublish(visualizer_context)
         stacked_trajectores.append(interm_traj)
 
-    return stacked_trajectores
+    start_frames = [goal_frames[-1]] + goal_frames[:-1] + ['finish']
+    ends = list(itertools.accumulate(map(lambda x: x.end_time(), stacked_trajectores)))
+    ends = [0.] + ends
+    times = {}
+    for a, b in zip(start_frames, ends):
+        times[a] = b
+    print(times)
+    wsg_trajectory = make_wsg_command_trajectory(times)
+
+    return stacked_trajectores, wsg_trajectory
 
 
 def trajopt_screwing_demo(meshcat):
@@ -578,9 +605,9 @@ def trajopt_screwing_demo(meshcat):
     rm.set_iiwa_default_position(plant)
     plant_context = plant.GetMyContextFromRoot(context)
     visualizer_context = visualizer.GetMyContextFromRoot(context)
-    stacked_trajectores = solve_for_screwing_trajectories(plant, plant_context, meshcat, visualizer, visualizer_context)
+    stacked_trajectores, wsg_trajectory = solve_for_screwing_trajectories(plant, plant_context, meshcat, visualizer, visualizer_context)
     
-    PublishStackOfPositionTrajectores(stacked_trajectores, context, plant, visualizer, meshcat)
+    PublishStackOfPositionTrajectores(stacked_trajectores, wsg_trajectory, context, plant, visualizer, meshcat)
     collision_visualizer.ForcedPublish(collision_visualizer.GetMyContextFromRoot(context))
 
 

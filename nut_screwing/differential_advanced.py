@@ -7,7 +7,7 @@ from pydrake.geometry import (
     Rgba,
     Sphere,
 )
-
+from pydrake.trajectories import PiecewisePolynomial
 from pydrake.all import (AbstractValue, AngleAxis, BsplineTrajectory, Concatenate, DiagramBuilder,
                          LeafSystem, MeshcatVisualizer, PiecewisePolynomial,
                          PiecewisePose, PointCloud, RigidTransform,
@@ -30,6 +30,8 @@ class SingleTurnTrajectory(LeafSystem):
         self.DeclareInitializationUnrestrictedUpdateEvent(self.Plan)
         self._opt_trajectories_index = self.DeclareAbstractState(
             AbstractValue.Make([BsplineTrajectory()]))
+        self._wsg_trajectory_index = self.DeclareAbstractState(
+            AbstractValue.Make(PiecewisePolynomial()))
 
         self.DeclareAbstractOutputPort(
             "X_WG", lambda: AbstractValue.Make(RigidTransform()),
@@ -41,11 +43,14 @@ class SingleTurnTrajectory(LeafSystem):
 
 
     def Plan(self, context, state):
-        opt_trajectories = solve_for_screwing_trajectories(self._plant, self._plant_context, self._meshcat, None, None)
+        opt_trajectories, wsg_trajectory = \
+            solve_for_screwing_trajectories(self._plant, self._plant_context, self._meshcat, None, None)
         self.total_time = functools.reduce(lambda x, y: x + y.end_time(), opt_trajectories, 0.)
 
         state.get_mutable_abstract_state(int(
             self._opt_trajectories_index)).set_value(opt_trajectories)
+        state.get_mutable_abstract_state(int(
+            self._wsg_trajectory_index)).set_value(wsg_trajectory)
 
 
     def get_entry(self, context):
@@ -74,6 +79,10 @@ class SingleTurnTrajectory(LeafSystem):
 
 
     def CalcWsgPosition(self, context, output):
+        #target_time = context.get_time()
+        #wsg_trajectory = context.get_abstract_state(int(self._wsg_trajectory_index)).get_value()
+        #y = wsg_trajectory.value(target_time)
+        #output.SetFromVector(y[0])
         output.SetFromVector([0.107])
 
 
