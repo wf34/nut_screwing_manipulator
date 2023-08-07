@@ -65,16 +65,22 @@ class SingleTurnTrajectory(LeafSystem):
             if target_time > curr_end_time:
                 continue
             else:
+                prev_end_time = 0. if i == 0 else end_times[i-1]
+                local_target_time = target_time - prev_end_time
                 break
 
-        return opt_trajectories[i].value(target_time)
+        assert opt_trajectories[i].start_time() <= local_target_time  and local_target_time <= opt_trajectories[i].end_time(), '{:.1f} not in ({:.1f}, {:.1f})'.format(
+            target_time, opt_trajectories[i].start_time(), opt_trajectories[i].end_time())
+        return opt_trajectories[i].value(local_target_time)
 
 
     def CalcGripperPose(self, context, output):
         internal_coords_at_target_time = self.get_entry(context)
 
+        saved_internal_coords = self._plant.GetPositions(self._plant_context)
         self._plant.SetPositions(self._plant_context, internal_coords_at_target_time)
         X_WG = self._plant.EvalBodyPoseInWorld(self._plant_context, self._plant.GetBodyByName("body"))
+        self._plant.SetPositions(self._plant_context, saved_internal_coords)
         output.set_value(X_WG)
 
 
