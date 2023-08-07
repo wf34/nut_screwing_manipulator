@@ -45,7 +45,7 @@ OPEN_IK = 'open_loop'
 
 TIME_STEP=0.0001 #finer
 TIME_STEP=0.001  #orig
-#TIME_STEP=0.007  #faster
+TIME_STEP=0.007  #faster
 
 def get_manipuland_resource_path():
     #manifest = runfiles.Create()
@@ -291,7 +291,7 @@ def simulate_nut_screwing(controller_type, log_destination):
 
     print(total_time)
     visualizer.StartRecording(False)
-    simulator.AdvanceTo(total_time)
+    simulator.AdvanceTo(6.7)#total_time)
     visualizer.PublishRecording()
     time.sleep(30)
 

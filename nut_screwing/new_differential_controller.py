@@ -56,10 +56,10 @@ def make_gripper_frames(X_G, X_O):
     assert 'goal' in X_O
     # Define (again) the gripper pose relative to the object when in grasp.
     
-    p_GgraspO = [0., 0.08, 0.09] # I want to achieve this version
+    p_GgraspO = [-0.02, 0.08, 0.12] # I want to achieve this version
     #p_GgraspO = [0., 0.20, 0.07] # which of these to use depends on gravity
 
-    p_Ggrasp2O = [-0.05, 0.08, 0.09] # this version allows for rotation around nut axis without displacing robot too much
+    p_Ggrasp2O = [-0.05, 0.08, 0.12] # this version allows for rotation around nut axis without displacing robot too much
     
     R_GgraspO = RotationMatrix.MakeZRotation(-np.pi/2.0) # #RotationMatrix.Identity() #MakeZRotation(-np.pi/2.0)
     X_GgraspO = RigidTransform(R_GgraspO, p_GgraspO)

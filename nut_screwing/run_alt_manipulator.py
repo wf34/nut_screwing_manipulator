@@ -198,22 +198,33 @@ def PublishStackOfPositionTrajectores(trajectories,
     visualizer_context = visualizer.GetMyContextFromRoot(root_context)
     visualizer.StartRecording(False)
 
-    ends = list(itertools.accumulate(map(lambda x: x.end_time(), trajectories)))
+    trajectory_end_time = lambda t: 1.0 if not t else t.end_time()
+
+    ends = list(itertools.accumulate(map(lambda x: trajectory_end_time(x), trajectories)))
     overall_length = functools.reduce(lambda x, y: x + y, ends, 0)
     ends = [0.] + ends[:-1]
+
+    def get_trajectory_value(trajectories, current_traj_index, current_time):
+        trajectory = trajectories[current_traj_index]
+        if not trajectory:
+            assert current_traj_index != 0
+            prev = trajectories[current_traj_index-1]
+            return prev.value(prev.end_time())
+        else:
+            trajectory = trajectories[current_traj_index]
+            return trajectory.value(current_time)
 
     current_traj_index = 0
     for t in np.append(np.arange(0., overall_length, time_step), overall_length):
         current_time = t - ends[current_traj_index]
-        if current_time > trajectories[current_traj_index].end_time():
+        if current_time > trajectory_end_time(trajectories[current_traj_index]):
             current_traj_index += 1
 
         if current_traj_index == len(trajectories):
             visualizer.ForcedPublish(visualizer_context)
             break
 
-        trajectory = trajectories[current_traj_index]
-        x = trajectory.value(current_time)
+        x = get_trajectory_value(trajectories, current_traj_index, current_time)
         wsg_current_value = wsg_trajectory.value(t).ravel()[0]
         x[7,0] = wsg_current_value
         plant.SetPositions(plant_context, x)
@@ -505,8 +516,10 @@ def make_wsg_command_trajectory(times):
     closed = np.array([0.0]);
     traj_wsg = PiecewisePolynomial.FirstOrderHold([times['initial'], times['prepick']],
                                                   np.hstack([[opened], [opened]]))
-    traj_wsg.AppendFirstOrderSegment(times['pick'], closed)
+    traj_wsg.AppendFirstOrderSegment(times['pick'], opened)
+    traj_wsg.AppendFirstOrderSegment(times['pick_close'], closed)
     traj_wsg.AppendFirstOrderSegment(times['place'], closed)
+    traj_wsg.AppendFirstOrderSegment(times['place_open'], opened)
     traj_wsg.AppendFirstOrderSegment(times['postplace'], opened)
     traj_wsg.AppendFirstOrderSegment(times['finish'], opened)
     print(type(traj_wsg))
@@ -564,9 +577,11 @@ def solve_for_screwing_trajectories(plant, plant_context, meshcat=None, visualiz
             assert visualizer_context
             visualizer.ForcedPublish(visualizer_context)
         stacked_trajectores.append(interm_traj)
+        if goal in ('pick', 'place'):
+            stacked_trajectores.append(None) # placeholder trajectory
 
-    start_frames = [goal_frames[-1]] + goal_frames[:-1] + ['finish']
-    ends = list(itertools.accumulate(map(lambda x: x.end_time(), stacked_trajectores)))
+    start_frames = ['initial', 'prepick', 'pick', 'pick_close', 'place', 'place_open', 'postplace', 'finish']
+    ends = list(itertools.accumulate(map(lambda x: 1.0 if not x else x.end_time(), stacked_trajectores)))
     ends = [0.] + ends
     times = {}
     for a, b in zip(start_frames, ends):
