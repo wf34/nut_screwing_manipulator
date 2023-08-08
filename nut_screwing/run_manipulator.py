@@ -291,7 +291,7 @@ def simulate_nut_screwing(controller_type, log_destination):
 
     print(total_time)
     visualizer.StartRecording(False)
-    simulator.AdvanceTo(6.7)#total_time)
+    simulator.AdvanceTo(total_time)
     visualizer.PublishRecording()
     time.sleep(30)
 
