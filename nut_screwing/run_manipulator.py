@@ -96,12 +96,12 @@ def AddExternallyAppliedSpatialForce(builder, station):
 
 def AddContactsSystem(builder, plant, meshcat):
     cv_params = ContactVisualizerParams()
-    #cv_params.publish_period = 0.05
-    #cv_params.default_color = Rgba(0.5, 0.5, 0.5)
+    cv_params.publish_period = 0.05
+    cv_params.default_color = Rgba(0.5, 0.5, 0.5)
     cv_params.force_threshold = 1e-6
-    cv_params.newtons_per_meter = 1.0
+    cv_params.newtons_per_meter = 100.0
     cv_params.radius = 0.002
-    ContactVisualizer.AddToBuilder(builder, plant, meshcat, cv_params)
+    return ContactVisualizer.AddToBuilder(builder, plant, meshcat, cv_params)
 
 
 def create_iiwa_position_measured_port(builder, plant, iiwa):
@@ -186,7 +186,7 @@ def build_scene(meshcat, controller_type, log_destination):
     zero_torque_system = builder.AddSystem(ConstantVectorSource(np.zeros(1)))
 
     plant.Finalize()
-    # AddContactsSystem(builder, plant, meshcat)
+    cv_system = AddContactsSystem(builder, plant, meshcat)
     # display_bodies_frames(plant, scene_graph)
 
     nut_input_port = plant.get_actuation_input_port(model_instance=bolt_with_nut)
@@ -241,8 +241,6 @@ def build_scene(meshcat, controller_type, log_destination):
 
     builder.Connect(output_iiwa_position_port, desired_iiwa_position_port)
     builder.Connect(output_wsg_position_port, desired_wsg_position_port)
-
-    # builder.Connect(plant.get_contact_results_output_port(), cv_system.contact_results_input_port())
     builder.Connect(zero_torque_system.get_output_port(0), nut_input_port)
 
     #meshcat.Delete()
